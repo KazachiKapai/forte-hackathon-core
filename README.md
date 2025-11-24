@@ -27,6 +27,8 @@ pip install -r requirements.txt
 - `WEBHOOK_URL` (required for hook registration) — public URL for your webhook endpoint, e.g. `https://your.domain/gitlab/webhook`
 - `GEMINI_API_KEY` (optional) — enables GPT review via Gemini
 - `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro`
+- `LABEL_CANDIDATES` (optional) — comma-separated list of labels to auto-apply via Gemini, e.g. `bug,security,perf,refactor,docs`
+- `LABEL_MAX` (optional) — maximum labels Gemini may apply (default: 2, cap: 5)
 - `HOST` (optional) — FastAPI bind address, default `0.0.0.0`
 - `PORT` (optional) — FastAPI port, default `8080`
 
@@ -87,6 +89,7 @@ Options:
 - On MR events (open, reopen, update), the webhook:
   - Fetches the MR diffs via GitLab API
   - Optionally generates a GPT review using Gemini if `GEMINI_API_KEY` is set
+  - Optionally classifies the MR into up to `LABEL_MAX` labels from `LABEL_CANDIDATES` and applies them
   - Posts a review comment back to the MR
 
 ## .env support

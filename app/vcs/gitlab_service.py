@@ -144,4 +144,16 @@ class GitLabService(VCSService):
 		mr = project.mergerequests.create({"source_branch": branch_name, "target_branch": t_branch, "title": mr_title})
 		return {"iid": mr.iid, "web_url": getattr(mr, "web_url", None), "project_path": project.path_with_namespace}
 
+	def update_mr_labels(self, project: Any, mr_iid: int, add_labels: List[str]) -> None:
+		if not add_labels:
+			return
+		mr = project.mergerequests.get(mr_iid)
+		current = list(getattr(mr, "labels", []) or [])
+		for lbl in add_labels:
+			if lbl and lbl not in current:
+				current.append(lbl)
+		# Save updated labels
+		mr.labels = current
+		mr.save()
+
 

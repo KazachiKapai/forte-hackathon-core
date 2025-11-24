@@ -15,6 +15,7 @@ from app.config import AppConfig, read_env
 from app.logging_config import configure_logging
 from app.vcs.gitlab_service import GitLabService
 from app.review.gemini_review import GeminiReviewGenerator
+from app.tagging.gemini_classifier import GeminiTagClassifier
 from app.webhook_processor import WebhookProcessor
 from app.server import create_app
 
@@ -24,7 +25,8 @@ _LOGGER = configure_logging()
 def build_services(cfg: AppConfig) -> WebhookProcessor:
 	gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
 	reviewer = GeminiReviewGenerator(api_key=cfg.gemini_api_key, model=cfg.gemini_model)
-	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret)
+	classifier = GeminiTagClassifier(api_key=cfg.gemini_api_key, model=cfg.gemini_model, max_labels=cfg.label_max)
+	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret, tag_classifier=classifier, label_candidates=cfg.label_candidates)
 
 
 def cmd_register_hooks(args: argparse.Namespace) -> None:

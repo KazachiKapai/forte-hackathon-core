@@ -36,4 +36,7 @@ class VCSService(ABC):
 	@abstractmethod
 	def create_test_mr(self, project_id: int, target_branch: Optional[str] = None, branch: Optional[str] = None, file_path: Optional[str] = None, title: Optional[str] = None) -> Dict[str, Any]: ...
 
+	@abstractmethod
+	def update_mr_labels(self, project: Any, mr_iid: int, add_labels: List[str]) -> None: ...
+
 
