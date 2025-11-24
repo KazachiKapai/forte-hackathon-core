@@ -1,7 +1,8 @@
 from typing import List, Optional, Tuple
 import json
 import re
-from ..logging_config import configure_logging
+import os
+from ..config.logging_config import configure_logging
 from .base import TagClassifier
 
 _LOGGER = configure_logging()
@@ -28,6 +29,32 @@ class GeminiTagClassifier(TagClassifier):
 		commit_messages: List[str],
 		candidates: List[str],
 	) -> List[str]:
+		# Dev mode: heuristic mock classification
+		if (os.environ.get("ENV", "prod") or "prod").lower() == "dev":
+			text = f"{title}\n{description}\n{diff_text}".lower()
+			score: List[Tuple[str, int]] = []
+			def add_if(label: str, *keywords: str) -> None:
+				for kw in keywords:
+					if kw in text:
+						score.append((label, 1))
+						return
+			add_if("bug", "fix", "bug", "error", "exception")
+			add_if("docs", "doc", "readme", "docs")
+			add_if("test", "test", "pytest", "coverage")
+			add_if("perf", "perf", "optimiz", "latency")
+			add_if("security", "xss", "csrf", "auth", "secur")
+			add_if("refactor", "refactor", "cleanup")
+			add_if("feature", "feat:", "feature", "add ")
+			# Deduplicate while preserving order
+			chosen: List[str] = []
+			seen = set()
+			for label, _ in score:
+				if label in seen:
+					continue
+				if any(label.lower() == c.lower() for c in candidates):
+					chosen.append(next(c for c in candidates if c.lower() == label.lower()))
+					seen.add(label)
+			return chosen[: max(1, int(self.max_labels or 1))]
 		if not _HAS_GEMINI or not self.api_key:
 			return []
 		if not candidates:

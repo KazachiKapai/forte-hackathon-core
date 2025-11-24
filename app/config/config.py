@@ -19,6 +19,7 @@ class AppConfig:
 		self.port = int(read_env("PORT", "8080") or "8080")
 		self.gemini_api_key = read_env("GEMINI_API_KEY")
 		self.gemini_model = read_env("GEMINI_MODEL", "gemini-2.5-pro")
+		self.env = (read_env("ENV", "prod") or "prod").lower()
 		self.label_candidates: List[str] = self._read_label_candidates()
 		self.label_max: int = self._read_label_max()
 

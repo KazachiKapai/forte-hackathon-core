@@ -1,8 +1,10 @@
 import os
 from typing import List, Optional, Tuple
+import os
+import json
 
 from .base import ReviewGenerator
-from ..logging_config import configure_logging
+from ..config.logging_config import configure_logging
 
 _LOGGER = configure_logging()
 
@@ -26,6 +28,29 @@ class GeminiReviewGenerator(ReviewGenerator):
 		changed_files: List[Tuple[str, str]],
 		commit_messages: List[str],
 	) -> str:
+		# Dev mode: return deterministic, structured mock output for validation
+		if (os.environ.get("ENV", "prod") or "prod").lower() == "dev":
+			num_files = len(changed_files or [])
+			approx_diff_len = len(diff_text or "")
+			issues: List[str] = []
+			recs: List[str] = []
+			text_lower = f"{title}\n{description}\n{diff_text}".lower()
+			if "fix" in text_lower or "bug" in text_lower:
+				issues.append("Potential bug fix detected")
+				recs.append("Add regression test covering the reported bug scenario")
+			if "readme" in text_lower or "doc" in text_lower:
+				recs.append("Ensure documentation is updated and accurate")
+			if "test" in text_lower:
+				recs.append("Verify tests are stable and deterministic")
+			mock = {
+				"type": "mock_review",
+				"title": title,
+				"issues": issues,
+				"recommendations": recs,
+				"summary": {"filesChanged": num_files, "diffChars": approx_diff_len, "commitCount": len(commit_messages or [])},
+			}
+			header = "Automated GPT Review (Mock)\n\n"
+			return header + "```json\n" + json.dumps(mock, ensure_ascii=False, indent=2) + "\n```"
 		if not _HAS_GEMINI:
 			_LOGGER.warning("Gemini package not installed")
 			return self._placeholder(diff_text)

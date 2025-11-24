@@ -27,10 +27,21 @@ pip install -r requirements.txt
 - `WEBHOOK_URL` (required for hook registration) — public URL for your webhook endpoint, e.g. `https://your.domain/gitlab/webhook`
 - `GEMINI_API_KEY` (optional) — enables GPT review via Gemini
 - `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro`
+- `ENV` (optional) — `prod` or `dev`. In `dev`, Gemini is mocked:
+  - Review: returns deterministic structured JSON inside the note
+  - Tagging: heuristic selection from candidates without calling Gemini
 - `LABEL_CANDIDATES` (optional) — comma-separated list of labels to auto-apply via Gemini, e.g. `bug,security,perf,refactor,docs`
 - `LABEL_MAX` (optional) — maximum labels Gemini may apply (default: 2, cap: 5)
 - `HOST` (optional) — FastAPI bind address, default `0.0.0.0`
 - `PORT` (optional) — FastAPI port, default `8080`
+- `WORKER_CONCURRENCY` (optional) — max concurrent MR processes (default: 4; min enforced: 2)
+- `DEDUPE_TTL_SECONDS` (optional) — idempotency window for webhook dedup (default: 300)
+- `IP_ALLOWLIST` (optional) — comma-separated CIDRs or IPs allowed to call the webhook (e.g., `35.231.145.0/24,34.74.226.50`)
+- `AUTO_ALLOW_MY_IP` (optional) — if `true`, auto-detect and allow this machine's public IP
+- `MY_PUBLIC_IP` (optional) — manual override for auto-detected public IP (used if `AUTO_ALLOW_MY_IP=true`)
+- `RATE_LIMIT_PER_MIN` (optional) — per-IP requests per minute (default: 60)
+- `RATE_LIMIT_BURST` (optional) — burst capacity for rate limiting (default: RATE_LIMIT_PER_MIN)
+- `WORKER_CONCURRENCY` (optional) — max concurrent MR processes (default: 4; min enforced: 2)
 
 Tip: For local development, expose your server with a tunnel (e.g., `ngrok http 8080`) and use the public URL as `WEBHOOK_URL`.
 
@@ -118,15 +129,17 @@ GEMINI_API_KEY=your-gemini-key
 
 ## Project structure (SOLID)
 
-- `app/config.py`: loads env into `AppConfig` and helper `read_env`.
-- `app/logging_config.py`: centralized logger configuration via `LOG_LEVEL`.
+- `app/config/`: configuration and logging
+  - `app/config/config.py`: loads env into `AppConfig` and helper `read_env`
+  - `app/config/logging_config.py`: centralized logger configuration via `LOG_LEVEL`
 - `app/vcs/base.py`: VCS abstraction interface.
 - `app/vcs/gitlab_service.py`: GitLab implementation (projects, MR diffs, notes, hooks, test MR).
 - `app/vcs/github_service.py`: GitHub skeleton implementation (future).
 - `app/review/base.py`: `ReviewGenerator` interface.
 - `app/review/gemini_review.py`: Gemini implementation with model discovery and fallbacks.
-- `app/webhook_processor.py`: validates webhook token, filters actions, orchestrates review.
-- `app/server.py`: FastAPI app wiring (routes).
+- `app/webhook/processor.py`: validates webhook token, queues and processes MR tasks
+- `app/server/http.py`: FastAPI app wiring (routes)
+- `app/infra/task_executor.py`: bounded global worker pool (`WORKER_CONCURRENCY`)
 - `main.py`: thin CLI entrypoint (`serve`, `register-hooks`, `list-projects`, `test-mr`).
 
 ## Troubleshooting
