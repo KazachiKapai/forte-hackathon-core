@@ -33,6 +33,7 @@ pip install -r requirements.txt
 - `AGENTIC_TIMEOUT` (optional) — LLM timeout in seconds (default: `60`)
 - `GEMINI_API_KEY` (optional) — enables label classification via Gemini
 - `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro` for tagging
+<<<<<<< HEAD
 - `GEMINI_API_KEY` (optional) — enables GPT review via Gemini
 - `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro`
 - `ENV` (optional) — `prod` or `dev`. In `dev`, Gemini is mocked:
@@ -46,6 +47,8 @@ pip install -r requirements.txt
 - `AGENTIC_TIMEOUT` (optional) — LLM timeout in seconds (default: `60`)
 - `GEMINI_API_KEY` (optional) — enables label classification via Gemini
 - `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro` for tagging
+=======
+>>>>>>> 77cbac2 (feat: add agentic langchain)
 - `LABEL_CANDIDATES` (optional) — comma-separated list of labels to auto-apply via Gemini, e.g. `bug,security,perf,refactor,docs`
 - `LABEL_MAX` (optional) — maximum labels Gemini may apply (default: 2, cap: 5)
 - `HOST` (optional) — FastAPI bind address, default `0.0.0.0`
@@ -127,8 +130,11 @@ Options:
     3. Naming and documentation review
     4. Test coverage review
   - Optionally classifies the MR into up to `LABEL_MAX` labels from `LABEL_CANDIDATES` and applies them
+<<<<<<< HEAD
   - If Jira is configured, searches related tickets (by title/description/labels/time) and includes a compact summary in the review context
   - Posts a review comment back to the MR
+=======
+>>>>>>> 77cbac2 (feat: add agentic langchain)
 
 ## .env support
 
@@ -164,6 +170,7 @@ AGENTIC_MODEL=gpt-4o-mini
 - `app/vcs/github_service.py`: GitHub skeleton implementation (future).
 - `app/review/base.py`: `ReviewGenerator` interface returning multiple comments.
 - `app/review/agentic/`: LangChain-based orchestrator, agents, prompts, and project context.
+<<<<<<< HEAD
 - `app/webhook/processor.py`: validates webhook token, queues and processes MR tasks
 - `app/server/http.py`: FastAPI app wiring (routes)
 - `app/infra/task_executor.py`: bounded global worker pool (`WORKER_CONCURRENCY`)
@@ -175,6 +182,10 @@ AGENTIC_MODEL=gpt-4o-mini
 - `app/webhook/processor.py`: validates webhook token, queues and processes MR tasks
 - `app/server/http.py`: FastAPI app wiring (routes)
 - `app/infra/task_executor.py`: bounded global worker pool (`WORKER_CONCURRENCY`)
+=======
+- `app/webhook_processor.py`: validates webhook token, filters actions, orchestrates review.
+- `app/server.py`: FastAPI app wiring (routes).
+>>>>>>> 77cbac2 (feat: add agentic langchain)
 - `main.py`: thin CLI entrypoint (`serve`, `register-hooks`, `list-projects`, `test-mr`).
 
 ## Troubleshooting
