@@ -1,6 +1,10 @@
 from typing import Any, Optional
 
+<<<<<<< HEAD
 from ...config.logging_config import configure_logging
+=======
+from ...logging_config import configure_logging
+>>>>>>> 77cbac2 (feat: add agentic langchain)
 
 _LOGGER = configure_logging()
 
