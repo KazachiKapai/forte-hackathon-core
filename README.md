@@ -9,9 +9,9 @@ Important security note: do not hardcode tokens in code. Provide them via enviro
 1) Create or use a GitLab Personal Access Token (PAT) with scopes:
 - api
 
-2) Create a Gemini API key (optional but recommended) and pick a model:
-- Set `GEMINI_API_KEY`
-- Optionally set `GEMINI_MODEL` (default: `gemini-2.5-pro`)
+2) Configure an LLM provider for the agentic reviewer:
+- For OpenAI: set `OPENAI_API_KEY` and optionally `AGENTIC_MODEL` (default: `gpt-4o-mini`)
+- For Google Gemini: set `GOOGLE_API_KEY`, `AGENTIC_PROVIDER=google`, and an available model name
 
 3) Install dependencies:
 
@@ -25,8 +25,14 @@ pip install -r requirements.txt
 - `GITLAB_TOKEN` (required) — your GitLab PAT
 - `GITLAB_WEBHOOK_SECRET` (required) — shared secret GitLab uses to sign webhook requests
 - `WEBHOOK_URL` (required for hook registration) — public URL for your webhook endpoint, e.g. `https://your.domain/gitlab/webhook`
-- `GEMINI_API_KEY` (optional) — enables GPT review via Gemini
-- `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro`
+- `OPENAI_API_KEY` (optional) — used when `AGENTIC_PROVIDER=openai`
+- `GOOGLE_API_KEY` (optional) — used when `AGENTIC_PROVIDER=google` (falls back to `GEMINI_API_KEY`)
+- `AGENTIC_PROVIDER` (optional) — defaults to `google`
+- `AGENTIC_MODEL` (optional) — defaults to `models/gemini-2.5-flash`. Для Google SDK автоматически добавляется префикс `models/`, поэтому можно указывать либо короткое имя (`gemini-2.5-flash`), либо полное (`models/gemini-2.5-flash`).
+- `PROJECT_CONTEXT_PATH` (optional) — JSON file with project description (default: `app/review/agentic/context/project_context.json`)
+- `AGENTIC_TIMEOUT` (optional) — LLM timeout in seconds (default: `60`)
+- `GEMINI_API_KEY` (optional) — enables label classification via Gemini
+- `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro` for tagging
 - `LABEL_CANDIDATES` (optional) — comma-separated list of labels to auto-apply via Gemini, e.g. `bug,security,perf,refactor,docs`
 - `LABEL_MAX` (optional) — maximum labels Gemini may apply (default: 2, cap: 5)
 - `HOST` (optional) — FastAPI bind address, default `0.0.0.0`
@@ -37,9 +43,9 @@ Tip: For local development, expose your server with a tunnel (e.g., `ngrok http 
 ## Run the webhook server
 
 ```bash
-export GITLAB_TOKEN=...           # required
-export GITLAB_WEBHOOK_SECRET=...  # required
-export GEMINI_API_KEY=...         # optional (enables AI review)
+export GITLAB_TOKEN=...            # required
+export GITLAB_WEBHOOK_SECRET=...   # required
+export OPENAI_API_KEY=...          # or GOOGLE_API_KEY with AGENTIC_PROVIDER=google
 python main.py serve
 ```
 
@@ -87,10 +93,13 @@ Options:
 ## What it does
 
 - On MR events (open, reopen, update), the webhook:
-  - Fetches the MR diffs via GitLab API
-  - Optionally generates a GPT review using Gemini if `GEMINI_API_KEY` is set
+  - Fetches the MR data via GitLab API
+  - Runs a multi-agent LangChain workflow that produces four GitLab notes:
+    1. Task context + code summary
+    2. Mermaid architecture diagram
+    3. Naming and documentation review
+    4. Test coverage review
   - Optionally classifies the MR into up to `LABEL_MAX` labels from `LABEL_CANDIDATES` and applies them
-  - Posts a review comment back to the MR
 
 ## .env support
 
@@ -100,8 +109,8 @@ If a `.env` file is present, it will be loaded on startup. Example:
 GITLAB_TOKEN=glpat-xxxx
 GITLAB_WEBHOOK_SECRET=supersecret
 WEBHOOK_URL=https://your-url/gitlab/webhook
-GEMINI_API_KEY=your-gemini-key
-# GEMINI_MODEL=gemini-2.0-pro
+OPENAI_API_KEY=your-openai-key
+AGENTIC_MODEL=gpt-4o-mini
 ```
 
 ## Security
@@ -123,8 +132,8 @@ GEMINI_API_KEY=your-gemini-key
 - `app/vcs/base.py`: VCS abstraction interface.
 - `app/vcs/gitlab_service.py`: GitLab implementation (projects, MR diffs, notes, hooks, test MR).
 - `app/vcs/github_service.py`: GitHub skeleton implementation (future).
-- `app/review/base.py`: `ReviewGenerator` interface.
-- `app/review/gemini_review.py`: Gemini implementation with model discovery and fallbacks.
+- `app/review/base.py`: `ReviewGenerator` interface returning multiple comments.
+- `app/review/agentic/`: LangChain-based orchestrator, agents, prompts, and project context.
 - `app/webhook_processor.py`: validates webhook token, filters actions, orchestrates review.
 - `app/server.py`: FastAPI app wiring (routes).
 - `main.py`: thin CLI entrypoint (`serve`, `register-hooks`, `list-projects`, `test-mr`).
@@ -134,19 +143,11 @@ GEMINI_API_KEY=your-gemini-key
 - 404 on ngrok “POST /”: webhook URL must end with `/gitlab/webhook`.
 - 401 Invalid webhook token: secret in GitLab Webhooks must equal `GITLAB_WEBHOOK_SECRET`.
 - 404 project/MR: verify IDs exist and PAT has access (Developer+).
-- Gemini model errors:
-  - Set a supported model: `export GEMINI_MODEL=gemini-2.5-pro` (or run model listing below).
-  - List available models for your key:
-
-```bash
-python - <<'PY'
-import os, google.generativeai as genai
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-models=[m.name for m in genai.list_models() if "generateContent" in getattr(m,"supported_generation_methods",[])]
-print("\n".join(models))
-PY
-```
-
+- Agentic reviewer disabled:
+  - Ensure the provider-specific API key is set and valid.
+  - Verify `AGENTIC_PROVIDER` and `AGENTIC_MODEL` match the provider you configured.
+- Tagging failures:
+  - Provide `GEMINI_API_KEY`/`GEMINI_MODEL` or remove `LABEL_CANDIDATES` to disable tagging.
 - Verbose logs:
   - `export LOG_LEVEL=DEBUG`
-  - Server logs show Gemini availability, key presence, chosen model, and API errors.
+  - Server logs include agent execution details, retries, and tagging diagnostics.

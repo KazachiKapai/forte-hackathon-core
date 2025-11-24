@@ -1,5 +1,6 @@
 import os
 from typing import Optional, List
+from pathlib import Path
 
 
 def read_env(name: str, default: Optional[str] = None, required: bool = False) -> Optional[str]:
@@ -11,6 +12,7 @@ def read_env(name: str, default: Optional[str] = None, required: bool = False) -
 
 class AppConfig:
 	def __init__(self) -> None:
+		base_dir = Path(__file__).resolve().parent
 		self.gitlab_url = read_env("GITLAB_URL", "https://gitlab.com")
 		self.gitlab_token = read_env("GITLAB_TOKEN", required=True)
 		self.webhook_secret = read_env("GITLAB_WEBHOOK_SECRET", required=True)
@@ -21,6 +23,26 @@ class AppConfig:
 		self.gemini_model = read_env("GEMINI_MODEL", "gemini-2.5-pro")
 		self.label_candidates: List[str] = self._read_label_candidates()
 		self.label_max: int = self._read_label_max()
+		self.agentic_provider = read_env("AGENTIC_PROVIDER", "google")
+		raw_model = read_env("AGENTIC_MODEL", "models/gemini-2.5-flash")
+		self.agentic_model = self._normalize_model_name(self.agentic_provider, raw_model)
+		self.openai_api_key = read_env("OPENAI_API_KEY")
+		self.google_api_key = read_env("GOOGLE_API_KEY") or self.gemini_api_key
+		default_context = base_dir / "review" / "agentic" / "context" / "project_context.json"
+		self.project_context_path = read_env("PROJECT_CONTEXT_PATH", str(default_context))
+		timeout_raw = read_env("AGENTIC_TIMEOUT", "60")
+		try:
+			self.agentic_timeout = float(timeout_raw or "60")
+		except Exception:
+			self.agentic_timeout = 60.0
+
+	@staticmethod
+	def _normalize_model_name(provider: Optional[str], model: Optional[str]) -> Optional[str]:
+		if not model:
+			return model
+		if (provider or "").lower().strip() in {"google", "gemini"} and not model.startswith("models/"):
+			return f"models/{model}"
+		return model
 
 	def _read_label_candidates(self) -> List[str]:
 		raw = read_env("LABEL_CANDIDATES", "")

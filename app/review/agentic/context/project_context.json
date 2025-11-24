@@ -1,0 +1,20 @@
+{
+	"name": "Forte Hackathon Core",
+	"description": "GitLab merge request automation that validates webhook events, runs multi-agent reviews, and posts structured comments back to GitLab.",
+	"tech_stack": [
+		"Python 3.11",
+		"FastAPI",
+		"LangChain",
+		"GitLab REST API",
+		"Uvicorn"
+	],
+	"architecture": [
+		"FastAPI endpoint /gitlab/webhook validates secrets and schedules background work.",
+		"WebhookProcessor loads merge request metadata via GitLabService.",
+		"Agentic reviewer orchestrates specialized agents (task summary, code summary, naming, tests, diagrams) with a shared LLM.",
+		"Results are posted as separate GitLab discussion notes."
+	],
+	"testing_standards": "Add focused pytest coverage for new endpoints, service logic, and edge cases. Prefer unit tests over integration unless external APIs are required.",
+	"coding_guidelines": "Follow PEP8, avoid mutable default args, keep modules cohesive, and use descriptive function/class names."
+}
+

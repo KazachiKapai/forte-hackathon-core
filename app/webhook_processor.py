@@ -81,7 +81,7 @@ class WebhookProcessor:
 				_LOGGER.exception("Failed to fetch MR commits", extra={"mr_iid": mr_iid, "project_id": project_id})
 
 		# Generate review and optional label concurrently
-		review_body = ""
+		review_comments: List[str] = []
 		label_choice: Optional[List[str]] = None
 		with ThreadPoolExecutor(max_workers=2) as pool:
 			review_f = pool.submit(
@@ -109,7 +109,11 @@ class WebhookProcessor:
 			else:
 				label_f = None
 			try:
-				review_body = review_f.result()
+				review_res = review_f.result()
+				if isinstance(review_res, list):
+					review_comments = [c.to_markdown() if hasattr(c, "to_markdown") else str(c) for c in review_res if c]
+				elif review_res:
+					review_comments = [str(review_res)]
 			except Exception:
 				_LOGGER.exception("Failed to generate review", extra={"mr_iid": mr_iid, "project_id": project_id})
 			if label_f is not None:
@@ -119,11 +123,15 @@ class WebhookProcessor:
 					_LOGGER.exception("Classifier failed", extra={"mr_iid": mr_iid, "project_id": project_id})
 
 		# Post results
-		if review_body:
-			try:
-				self.service.post_mr_note(project, mr_iid, review_body)
-			except Exception:
-				_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
+		if review_comments:
+			for body in review_comments:
+				if not body:
+					continue
+				try:
+					self.service.post_mr_note(project, mr_iid, body)
+				except Exception:
+					_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
+					break
 		if label_choice:
 			try:
 				self.service.update_mr_labels(project, mr_iid, label_choice)
