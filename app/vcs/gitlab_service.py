@@ -144,6 +144,17 @@ class GitLabService(VCSService):
 		mr = project.mergerequests.create({"source_branch": branch_name, "target_branch": t_branch, "title": mr_title})
 		return {"iid": mr.iid, "web_url": getattr(mr, "web_url", None), "project_path": project.path_with_namespace}
 
+	def get_latest_mr_version_id(self, project: Any, mr_iid: int) -> Optional[str]:
+		try:
+			versions = project.mergerequests.get(mr_iid).versions()
+			if not versions:
+				return None
+			# The API returns versions in ascending order; last one is latest
+			last = versions[-1]
+			return str(getattr(last, "id", "") or getattr(last, "version", "") or "")
+		except Exception:
+			return None
+
 	def update_mr_labels(self, project: Any, mr_iid: int, add_labels: List[str]) -> None:
 		if not add_labels:
 			return

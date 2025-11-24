@@ -42,12 +42,31 @@ class GeminiReviewGenerator(ReviewGenerator):
 				recs.append("Ensure documentation is updated and accurate")
 			if "test" in text_lower:
 				recs.append("Verify tests are stable and deterministic")
+			# Parse related tickets from description (appended by processor)
+			related: List[dict] = []
+			if "related tickets:" in text_lower:
+				lines = description.splitlines()
+				collect = False
+				for ln in lines:
+					if ln.strip().lower().startswith("related tickets:"):
+						collect = True
+						continue
+					if collect:
+						if ln.strip().startswith("- "):
+							# Format: - KEY [STATUS]: Summary (URL)
+							part = ln.strip()[2:]
+							key = part.split(" ", 1)[0]
+							url = ""
+							if "(" in part and ")" in part:
+								url = part[part.rfind("(") + 1 : part.rfind(")")]
+							related.append({"key": key, "url": url})
 			mock = {
 				"type": "mock_review",
 				"title": title,
 				"issues": issues,
 				"recommendations": recs,
 				"summary": {"filesChanged": num_files, "diffChars": approx_diff_len, "commitCount": len(commit_messages or [])},
+				"relatedTickets": related,
 			}
 			header = "Automated GPT Review (Mock)\n\n"
 			return header + "```json\n" + json.dumps(mock, ensure_ascii=False, indent=2) + "\n```"

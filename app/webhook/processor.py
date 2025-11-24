@@ -5,18 +5,20 @@ import gitlab
 from ..vcs.base import VCSService
 from ..review.base import ReviewGenerator
 from ..tagging.base import TagClassifier
+from ..integrations.jira_service import JiraService
 from ..config.logging_config import configure_logging
 
 _LOGGER = configure_logging()
 
 
 class WebhookProcessor:
-	def __init__(self, service: VCSService, reviewer: ReviewGenerator, webhook_secret: str, tag_classifier: Optional[TagClassifier] = None, label_candidates: Optional[List[str]] = None) -> None:
+	def __init__(self, service: VCSService, reviewer: ReviewGenerator, webhook_secret: str, tag_classifier: Optional[TagClassifier] = None, label_candidates: Optional[List[str]] = None, jira_service: Optional[JiraService] = None) -> None:
 		self.service = service
 		self.reviewer = reviewer
 		self.webhook_secret = webhook_secret
 		self.tag_classifier = tag_classifier
 		self.label_candidates = label_candidates or []
+		self.jira_service = jira_service
 
 	def validate_secret(self, provided: Optional[str]) -> None:
 		if not provided or provided != self.webhook_secret:
@@ -43,11 +45,31 @@ class WebhookProcessor:
 			_LOGGER.exception("Failed to fetch project for processing", extra={"project_id": project_id})
 			return
 		diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
-		review_body, label_choice = self._review_and_classify(title, description, diff_text, changed_files, commit_messages, project_id, mr_iid)
+		description_aug = self._augment_with_tickets(project, mr_iid, title, description)
+		review_body, label_choice = self._review_and_classify(title, description_aug, diff_text, changed_files, commit_messages, project_id, mr_iid)
 		if review_body:
+			# Idempotency by MR version: embed and check a version marker
+			version_id = None
 			try:
-				self.service.post_mr_note(project, mr_iid, review_body)
-				_LOGGER.info("Posted MR review", extra={"event_uuid": event_uuid, "project_id": project_id, "mr_iid": mr_iid})
+				version_id = self.service.get_latest_mr_version_id(project, mr_iid)  # type: ignore[attr-defined]
+			except Exception:
+				version_id = None
+			marker = f"[ai-review v:{version_id or 'unknown'}]"
+			try:
+				notes = project.mergerequests.get(mr_iid).notes.list(per_page=20)
+				for n in notes:
+					if marker in (getattr(n, 'body', '') or ''):
+						_LOGGER.info("Duplicate review detected for version, skipping post", extra={"mr_iid": mr_iid, "version": version_id})
+						review_body = ""
+						break
+			except Exception:
+				pass
+			if version_id:
+				review_body = f"{marker}\n{review_body}"
+			try:
+				if review_body:
+					self.service.post_mr_note(project, mr_iid, review_body)
+					_LOGGER.info("Posted MR review", extra={"event_uuid": event_uuid, "project_id": project_id, "mr_iid": mr_iid, "version": version_id})
 			except Exception:
 				_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
 		if label_choice:
@@ -160,5 +182,33 @@ class WebhookProcessor:
 			except Exception:
 				_LOGGER.exception("Failed to apply MR label", extra={"mr_iid": mr_iid, "project_id": project_id})
 		return review_body, label_choice
+
+	def _augment_with_tickets(self, project: Any, mr_iid: int, title: str, description: str) -> str:
+		if not self.jira_service:
+			return description
+		try:
+			mr = project.mergerequests.get(mr_iid)
+			labels = list(getattr(mr, "labels", []) or [])
+			created_at = getattr(mr, "created_at", None)
+			web_url = getattr(mr, "web_url", None)
+			_LOGGER.info("Searching Jira for related tickets", extra={"mr_iid": mr_iid, "labels": labels})
+			issues = self.jira_service.search_related_issues(
+				title=title,
+				description=description or "",
+				labels=labels,
+				created_at_iso=created_at,
+				mr_url=web_url,
+			)
+			if not issues:
+				_LOGGER.info("No related Jira tickets found", extra={"mr_iid": mr_iid})
+				return description
+			lines: List[str] = ["Related Tickets:"]
+			for it in issues:
+				lines.append(f"- {it.get('key')} [{it.get('status')}]: {it.get('summary')} ({it.get('url')})")
+			_LOGGER.info("Appending related Jira tickets", extra={"mr_iid": mr_iid, "count": len(issues)})
+			return (description or "") + "\n\n" + "\n".join(lines)
+		except Exception:
+			_LOGGER.exception("Jira augmentation failed", extra={"mr_iid": mr_iid})
+			return description
 
 
