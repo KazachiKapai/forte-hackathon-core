@@ -128,21 +128,87 @@ class GitLabService(VCSService):
 		project = self.client.projects.get(project_id)
 		t_branch = target_branch or getattr(project, "default_branch", None) or "main"
 		branch_name = branch or f"test-webhook-{int(time.time())}"
-		path = file_path or "webhook_test.txt"
-		mr_title = title or f"Webhook Test MR {branch_name}"
+		# Prepare a meaningful change set: small feature + docs + tests
+		now_ts = int(time.time())
+		created_files: List[str] = []
+		# Always create new files in new folders to avoid conflicts
+		files_payload = [
+			(
+				file_path or "src/feature/calc_interest.py",
+				"# Simple interest calculator\n"
+				"def calculate_simple_interest(principal: float, annual_rate_percent: float, years: float) -> float:\n"
+				"	\"\"\"\n"
+				"	Calculate simple interest using I = P * r * t.\n"
+				"	- principal: base amount\n"
+				"	- annual_rate_percent: percent per year, e.g. 10 for 10%\n"
+				"	- years: period in years (can be fractional)\n"
+				"	\"\"\"\n"
+				"	if principal < 0 or annual_rate_percent < 0 or years < 0:\n"
+				"		raise ValueError(\"Inputs must be non-negative\")\n"
+				"	rate = annual_rate_percent / 100.0\n"
+				"	return principal * rate * years\n",
+			),
+			(
+				"src/feature/__init__.py",
+				"__all__ = ['calculate_simple_interest']\n",
+			),
+			(
+				"tests/test_calc_interest.py",
+				"from src.feature.calc_interest import calculate_simple_interest\n"
+				"\n"
+				"def test_calculate_simple_interest_basic():\n"
+				"	assert calculate_simple_interest(1000, 10, 1) == 100\n"
+				"\n"
+				"def test_calculate_simple_interest_zero():\n"
+				"	assert calculate_simple_interest(0, 10, 5) == 0\n",
+			),
+			(
+				"docs/CHANGELOG.md",
+				f"# Changelog\n\n- {now_ts}: Added simple interest calculator, docs, and tests.\n",
+			),
+		]
+		mr_title = title or "Add simple interest calculator, docs, and tests"
+		mr_description = (
+			"Summary:\n"
+			"- Introduces a minimal simple interest function.\n"
+			"- Adds unit tests and a basic changelog.\n"
+			"\n"
+			"Affected files:\n"
+			f"- {files_payload[0][0]}\n"
+			f"- {files_payload[1][0]}\n"
+			f"- {files_payload[2][0]}\n"
+			f"- {files_payload[3][0]}\n"
+		)
 		try:
 			project.branches.create({"branch": branch_name, "ref": t_branch})
 		except Exception:
 			pass
+		actions = []
+		for p, content in files_payload:
+			created_files.append(p)
+			actions.append({"action": "create", "file_path": p, "content": content})
 		project.commits.create(
 			{
 				"branch": branch_name,
-				"commit_message": "test: trigger webhook",
-				"actions": [{"action": "create", "file_path": path, "content": f"hello webhook {int(time.time())}\n"}],
+				"commit_message": "feat: add simple interest calculator, docs and tests",
+				"actions": actions,
 			}
 		)
-		mr = project.mergerequests.create({"source_branch": branch_name, "target_branch": t_branch, "title": mr_title})
-		return {"iid": mr.iid, "web_url": getattr(mr, "web_url", None), "project_path": project.path_with_namespace}
+		mr = project.mergerequests.create(
+			{
+				"source_branch": branch_name,
+				"target_branch": t_branch,
+				"title": mr_title,
+				"description": mr_description,
+			}
+		)
+		return {
+			"iid": mr.iid,
+			"web_url": getattr(mr, "web_url", None),
+			"project_path": project.path_with_namespace,
+			"branch": branch_name,
+			"files": created_files,
+		}
 
 	def get_latest_mr_version_id(self, project: Any, mr_iid: int) -> Optional[str]:
 		try:
@@ -166,5 +232,18 @@ class GitLabService(VCSService):
 		# Save updated labels
 		mr.labels = current
 		mr.save()
+	
+	def prefix_mr_title(self, project: Any, mr_iid: int, prefix: str) -> None:
+		"""
+		Prefix MR title with [<prefix>] if not already present.
+		"""
+		if not prefix:
+			return
+		mr = project.mergerequests.get(mr_iid)
+		title = getattr(mr, "title", "") or ""
+		tag = f"[{prefix}] "
+		if not title.startswith(tag):
+			mr.title = f"{tag}{title}"
+			mr.save()
 
 
