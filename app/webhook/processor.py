@@ -165,22 +165,8 @@ class WebhookProcessor:
 				except Exception:
 					_LOGGER.exception("Classifier failed", extra={"mr_iid": mr_iid, "project_id": project_id})
 
-		# Post results
-		if review_comments:
-			for body in review_comments:
-				if not body:
-					continue
-				try:
-					self.service.post_mr_note(project, mr_iid, body)
-				except Exception:
-					_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
-					break
-		if label_choice:
-			try:
-				self.service.update_mr_labels(project, mr_iid, label_choice)
-				_LOGGER.info("Applied MR labels", extra={"labels": label_choice, "mr_iid": mr_iid, "project_id": project_id})
-			except Exception:
-				_LOGGER.exception("Failed to apply MR label", extra={"mr_iid": mr_iid, "project_id": project_id})
+		# Compose a single review body for posting by caller (with version dedup)
+		review_body = "\n\n".join([b for b in review_comments if b])
 		return review_body, label_choice
 
 	def _augment_with_tickets(self, project: Any, mr_iid: int, title: str, description: str) -> str:

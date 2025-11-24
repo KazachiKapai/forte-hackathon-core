@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 
 from ..base import ReviewComment, ReviewGenerator
-from ...logging_config import configure_logging
+from ...config.logging_config import configure_logging
 from .agents import (
 	CodeSummaryAgent,
 	DiagramAgent,

@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from ...logging_config import configure_logging
+from ...config.logging_config import configure_logging
 
 _LOGGER = configure_logging()
 
