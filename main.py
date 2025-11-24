@@ -16,6 +16,7 @@ from app.review.gemini_review import GeminiReviewGenerator
 from app.tagging.gemini_classifier import GeminiTagClassifier
 from app.webhook import WebhookProcessor
 from app.server import create_app
+from app.integrations.jira_service import JiraService
 
 _LOGGER = configure_logging()
 
@@ -24,7 +25,19 @@ def build_services(cfg: AppConfig) -> WebhookProcessor:
 	gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
 	reviewer = GeminiReviewGenerator(api_key=cfg.gemini_api_key, model=cfg.gemini_model)
 	classifier = GeminiTagClassifier(api_key=cfg.gemini_api_key, model=cfg.gemini_model, max_labels=cfg.label_max)
-	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret, tag_classifier=classifier, label_candidates=cfg.label_candidates)
+	jira = None
+	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token:
+		jira = JiraService(
+			base_url=cfg.jira_url,
+			email=cfg.jira_email,
+			api_token=cfg.jira_api_token,
+			project_keys=cfg.jira_project_keys,
+			max_issues=cfg.jira_max_issues,
+		)
+		_LOGGER.info("Jira integration enabled", extra={"projects": cfg.jira_project_keys, "max_issues": cfg.jira_max_issues})
+	else:
+		_LOGGER.info("Jira integration disabled (missing JIRA_URL/JIRA_EMAIL/JIRA_API_TOKEN)")
+	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret, tag_classifier=classifier, label_candidates=cfg.label_candidates, jira_service=jira)
 
 
 def cmd_register_hooks(args: argparse.Namespace) -> None:
@@ -80,6 +93,36 @@ def cmd_test_mr(args: argparse.Namespace) -> None:
 	print(f"Created MR !{res['iid']} in project {res['project_path']}")
 	if res.get("web_url"):
 		print(res["web_url"])
+	# Optionally create a Jira ticket to make it discoverable by the webhook
+	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token and cfg.jira_project_keys:
+		try:
+			jira = JiraService(
+				base_url=cfg.jira_url,
+				email=cfg.jira_email,
+				api_token=cfg.jira_api_token,
+				project_keys=cfg.jira_project_keys,
+				max_issues=cfg.jira_max_issues,
+			)
+			project_key = args.jira_project or (cfg.jira_project_keys[0] if cfg.jira_project_keys else None)
+			if not project_key:
+				print("No Jira project key set. Configure JIRA_PROJECT_KEYS or pass --jira-project KEY")
+				return
+			summary = args.title or f"Webhook Test MR {res['iid']}"
+			desc_lines = [
+				f"Auto-created for MR !{res['iid']} in {res['project_path']}",
+				f"URL: {res.get('web_url','')}",
+				"Labels: autotest, webhook",
+			]
+			created = jira.create_issue(
+				project_key=project_key,
+				summary=summary,
+				description="\n".join(desc_lines),
+				labels=["autotest", "webhook"],
+			)
+			if created:
+				print(f"Created Jira issue {created['key']} {created['url']}")
+		except Exception as e:
+			print(f"Failed to create Jira issue: {e}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -96,13 +139,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	p_ls = sub.add_parser("list-projects", help="List projects where you have membership")
 	p_ls.set_defaults(func=cmd_list_projects)
 
+	def cmd_list_jira_projects(_: argparse.Namespace) -> None:
+		cfg = AppConfig()
+		if not (cfg.jira_url and cfg.jira_email and cfg.jira_api_token):
+			print("Jira is not configured. Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN.")
+			return
+		jira = JiraService(
+			base_url=cfg.jira_url,
+			email=cfg.jira_email,
+			api_token=cfg.jira_api_token,
+		)
+		projs = jira.list_projects()
+		if not projs:
+			print("No projects found or insufficient permissions.")
+			return
+		for pr in projs:
+			print(f"{pr.get('key','')}\t{pr.get('name','')}")
+
 	p_test = sub.add_parser("test-mr", help="Create a test branch/commit/MR in a project")
 	p_test.add_argument("--project-id", required=True, help="Target project ID")
 	p_test.add_argument("--branch", help="Branch name to create/use (default: test-webhook-<timestamp>)")
 	p_test.add_argument("--file-path", help="File path to create in the commit (default: webhook_test.txt)")
 	p_test.add_argument("--target-branch", help="Target branch (default: project default)")
 	p_test.add_argument("--title", help="Merge Request title")
+	p_test.add_argument("--jira-project", help="Jira project key to create test issue (overrides JIRA_PROJECT_KEYS[0])")
 	p_test.set_defaults(func=cmd_test_mr)
+	p_jls = sub.add_parser("list-jira-projects", help="List Jira projects (keys and names)")
+	p_jls.set_defaults(func=cmd_list_jira_projects)
 	return parser
 
 

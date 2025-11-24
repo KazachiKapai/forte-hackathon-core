@@ -22,6 +22,12 @@ class AppConfig:
 		self.env = (read_env("ENV", "prod") or "prod").lower()
 		self.label_candidates: List[str] = self._read_label_candidates()
 		self.label_max: int = self._read_label_max()
+		self.jira_url = read_env("JIRA_URL")
+		self.jira_email = read_env("JIRA_EMAIL")
+		self.jira_api_token = read_env("JIRA_API_TOKEN")
+		self.jira_project_keys: List[str] = self._read_jira_projects()
+		self.jira_max_issues: int = int(read_env("JIRA_MAX_ISSUES", "5") or "5")
+		self.jira_search_window: str = read_env("JIRA_SEARCH_WINDOW", "-30d") or "-30d"
 
 	def _read_label_candidates(self) -> List[str]:
 		raw = read_env("LABEL_CANDIDATES", "")
@@ -37,5 +43,11 @@ class AppConfig:
 		except Exception:
 			val = 2
 		return max(1, min(val, 5))
+
+	def _read_jira_projects(self) -> List[str]:
+		raw = read_env("JIRA_PROJECT_KEYS", "")
+		if not raw:
+			return ["KZKP"]
+		return [p.strip() for p in raw.split(",") if p.strip()]
 
 
