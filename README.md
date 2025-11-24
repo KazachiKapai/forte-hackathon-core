@@ -117,7 +117,9 @@ GEMINI_API_KEY=your-gemini-key
 
 - `app/config.py`: loads env into `AppConfig` and helper `read_env`.
 - `app/logging_config.py`: centralized logger configuration via `LOG_LEVEL`.
-- `app/gitlab_service.py`: GitLab API wrapper (projects, MR diffs, notes, hooks, test MR).
+- `app/vcs/base.py`: VCS abstraction interface.
+- `app/vcs/gitlab_service.py`: GitLab implementation (projects, MR diffs, notes, hooks, test MR).
+- `app/vcs/github_service.py`: GitHub skeleton implementation (future).
 - `app/review/base.py`: `ReviewGenerator` interface.
 - `app/review/gemini_review.py`: Gemini implementation with model discovery and fallbacks.
 - `app/webhook_processor.py`: validates webhook token, filters actions, orchestrates review.

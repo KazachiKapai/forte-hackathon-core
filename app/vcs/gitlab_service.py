@@ -2,9 +2,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import time
 import gitlab
 import base64
+from .base import VCSService
 
 
-class GitLabService:
+class GitLabService(VCSService):
 	def __init__(self, base_url: str, private_token: str) -> None:
 		self.client = gitlab.Gitlab(base_url, private_token=private_token)
 

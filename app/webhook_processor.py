@@ -1,12 +1,12 @@
 from typing import Any, Dict, Optional
 import gitlab
 
-from .gitlab_service import GitLabService
+from .vcs.base import VCSService
 from .review.base import ReviewGenerator
 
 
 class WebhookProcessor:
-	def __init__(self, service: GitLabService, reviewer: ReviewGenerator, webhook_secret: str) -> None:
+	def __init__(self, service: VCSService, reviewer: ReviewGenerator, webhook_secret: str) -> None:
 		self.service = service
 		self.reviewer = reviewer
 		self.webhook_secret = webhook_secret

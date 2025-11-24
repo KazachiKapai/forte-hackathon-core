@@ -13,7 +13,7 @@ except Exception:
 
 from app.config import AppConfig, read_env
 from app.logging_config import configure_logging
-from app.gitlab_service import GitLabService
+from app.vcs.gitlab_service import GitLabService
 from app.review.gemini_review import GeminiReviewGenerator
 from app.webhook_processor import WebhookProcessor
 from app.server import create_app
