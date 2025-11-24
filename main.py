@@ -103,6 +103,7 @@ def cmd_test_mr(args: argparse.Namespace) -> None:
 	# Optionally create a Jira ticket to make it discoverable by the webhook
 	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token and cfg.jira_project_keys:
 		try:
+			project = service.get_project(project_id)
 			jira = JiraService(
 				base_url=cfg.jira_url,
 				email=cfg.jira_email,
@@ -114,12 +115,20 @@ def cmd_test_mr(args: argparse.Namespace) -> None:
 			if not project_key:
 				print("No Jira project key set. Configure JIRA_PROJECT_KEYS or pass --jira-project KEY")
 				return
-			summary = args.title or f"Webhook Test MR {res['iid']}"
+			default_summary = "Add simple interest calculator, docs, and tests"
+			summary = args.title or f"{default_summary} (!{res['iid']})"
 			desc_lines = [
 				f"Auto-created for MR !{res['iid']} in {res['project_path']}",
 				f"URL: {res.get('web_url','')}",
 				"Labels: autotest, webhook",
 			]
+			files = res.get("files") or []
+			if files:
+				desc_lines.append("Affected files:")
+				for p in files:
+					desc_lines.append(f"- {p}")
+			if res.get("branch"):
+				desc_lines.append(f"Branch: {res.get('branch')}")
 			created = jira.create_issue(
 				project_key=project_key,
 				summary=summary,
@@ -128,6 +137,18 @@ def cmd_test_mr(args: argparse.Namespace) -> None:
 			)
 			if created:
 				print(f"Created Jira issue {created['key']} {created['url']}")
+				# Link Jira issue to MR and annotate MR
+				try:
+					mr_url = res.get("web_url", "")
+					if mr_url:
+						jira.add_remote_link(created["key"], mr_url, title=f"GitLab MR !{res['iid']}")
+					# Add MR note with Jira reference and label MR
+					service.post_mr_note(project, res["iid"], f"Linked Jira issue {created['key']} {created['url']}")
+					service.update_mr_labels(project, res["iid"], ["jira", f"jira-{created['key']}"])
+					# Prefix MR title with Jira key for easy traceability
+					service.prefix_mr_title(project, res["iid"], created["key"])
+				except Exception as e2:
+					print(f"Failed to link Jira issue to MR: {e2}")
 		except Exception as e:
 			print(f"Failed to create Jira issue: {e}")
 

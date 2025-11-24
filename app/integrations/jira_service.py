@@ -189,6 +189,18 @@ class JiraService:
 			extra={"matched": len(issues_out), "keys": [i.get("key") for i in issues_out]},
 		)
 		return issues_out
+	
+	def add_remote_link(self, issue_key: str, url: str, title: Optional[str] = None) -> None:
+		"""
+		Create a remote link from Jira issue to an external resource (e.g., GitLab MR).
+		"""
+		if not issue_key or not url:
+			return
+		try:
+			# jira client expects top-level url/title
+			self.client.add_remote_link(issue_key, {"url": url, "title": title or url})
+		except Exception:
+			_LOGGER.exception("Jira add_remote_link failed")
 
 	def create_issue(
 		self,
