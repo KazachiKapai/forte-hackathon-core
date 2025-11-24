@@ -4,19 +4,17 @@ import sys
 from typing import List, Optional
 
 import uvicorn
-
 try:
 	from dotenv import load_dotenv  # type: ignore
 	load_dotenv()
 except Exception:
 	pass
 
-from app.config import AppConfig, read_env
-from app.logging_config import configure_logging
+from app.config import AppConfig, read_env, configure_logging
 from app.vcs.gitlab_service import GitLabService
 from app.review.agentic import AgenticReviewGenerator
 from app.tagging.gemini_classifier import GeminiTagClassifier
-from app.webhook_processor import WebhookProcessor
+from app.webhook import WebhookProcessor
 from app.server import create_app
 
 _LOGGER = configure_logging()
