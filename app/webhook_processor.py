@@ -51,7 +51,16 @@ class WebhookProcessor:
 			return {"status": "error", "code": 404, "message": f"GitLab merge request not found: {e}"}
 
 		diff_text = self.service.collect_mr_diff_text(project, mr_iid)
-		review_body = self.reviewer.generate_review(diff_text, title=title, description=description)
+		changed_files = self.service.get_changed_files_with_content(project, mr_iid)
+		commit_objs = self.service.get_mr_commits(project, mr_iid)
+		commit_messages = [c.get("message", "") for c in commit_objs if c.get("message")]
+		review_body = self.reviewer.generate_review(
+			title=title,
+			description=description,
+			diff_text=diff_text,
+			changed_files=changed_files,
+			commit_messages=commit_messages,
+		)
 		self.service.post_mr_note(project, mr_iid, review_body)
 		return {"status": "ok", "posted": True}
 

@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .base import ReviewGenerator
 from ..logging_config import configure_logging
@@ -18,7 +18,14 @@ class GeminiReviewGenerator(ReviewGenerator):
 		self.api_key = api_key
 		self.model = model
 
-	def generate_review(self, diff_text: str, title: str, description: str) -> str:
+	def generate_review(
+		self,
+		title: str,
+		description: str,
+		diff_text: str,
+		changed_files: List[Tuple[str, str]],
+		commit_messages: List[str],
+	) -> str:
 		if not _HAS_GEMINI:
 			_LOGGER.warning("Gemini package not installed")
 			return self._placeholder(diff_text)
@@ -36,11 +43,22 @@ class GeminiReviewGenerator(ReviewGenerator):
 				"- Suggest concrete improvements and tests.\n"
 				"- If diff is large, focus on highest-risk areas first.\n"
 			)
+			files_blob = ""
+			if changed_files:
+				parts: List[str] = []
+				for path, content in changed_files:
+					parts.append(f"File: {path}\nContent:\n{content}\n")
+				files_blob = "\n".join(parts)
+			commits_blob = ""
+			if commit_messages:
+				commits_blob = "\n".join(f"- {m}" for m in commit_messages)
 			prompt = (
 				f"{system_instructions}\n\n"
 				f"Merge Request Title: {title}\n\n"
 				f"Description:\n{description}\n\n"
-				f"Unified Diff:\n{diff_text}\n"
+				f"Unified Diff:\n{diff_text}\n\n"
+				f"Changed Files (new contents):\n{files_blob}\n\n"
+				f"Commit Messages:\n{commits_blob}\n"
 			)
 			last_err: Optional[Exception] = None
 			for model_name in candidates:
