@@ -1,7 +1,10 @@
 from typing import Dict, Optional
 from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from collections import deque
+import os
+import re
 
 from ..webhook import WebhookProcessor
 from ..infra.task_executor import get_shared_executor
@@ -9,15 +12,19 @@ from ..infra.dedupe import get_dedupe_store
 from ..infra.ipfilter import get_effective_allowlist, is_ip_allowed
 from ..infra.ratelimit import get_rate_limiter
 from ..infra.cooldown import get_cooldown_store
-import os
-import re
 from ..config.logging_config import configure_logging
+from ..auth import router as auth_router
+from ..tokens import router as tokens_router
+from ..repos import router as repos_router
 
 _LOGGER = configure_logging()
 
 _SEEN_EVENT_MAX = 1024
 _seen_event_ids = deque(maxlen=_SEEN_EVENT_MAX)
 _seen_event_set = set()
+
+
+_FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 
 def _record_event_uuid(event_uuid: Optional[str]) -> bool:
@@ -35,10 +42,22 @@ def _record_event_uuid(event_uuid: Optional[str]) -> bool:
 
 def create_app(processor: WebhookProcessor) -> FastAPI:
 	app = FastAPI()
+	app.add_middleware(
+		CORSMiddleware,
+		allow_origins=[_FRONTEND_URL],
+		allow_credentials=True,
+		allow_methods=["*"],
+		allow_headers=["*"],
+	)
 
 	@app.get("/health")
 	async def health() -> Dict[str, str]:
 		return {"status": "ok"}
+
+	# Mount feature routers
+	app.include_router(auth_router)
+	app.include_router(tokens_router)
+	app.include_router(repos_router)
 
 	@app.post("/gitlab/webhook")
 	async def gitlab_webhook(

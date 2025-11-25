@@ -8,4 +8,4 @@ langchain-core>=0.2,<0.3
 langchain-openai>=0.1,<0.2
 langchain-google-genai>=1.0,<2.0
 jira==3.10.5
-
+pytest==9.0.1
