@@ -12,7 +12,7 @@ except Exception:
 
 from app.config import AppConfig, read_env, configure_logging
 from app.vcs.gitlab_service import GitLabService
-from app.review.gemini_review import GeminiReviewGenerator
+from app.review.agentic import AgenticReviewGenerator
 from app.tagging.gemini_classifier import GeminiTagClassifier
 from app.webhook import WebhookProcessor
 from app.server import create_app
@@ -23,7 +23,14 @@ _LOGGER = configure_logging()
 
 def build_services(cfg: AppConfig) -> WebhookProcessor:
 	gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
-	reviewer = GeminiReviewGenerator(api_key=cfg.gemini_api_key, model=cfg.gemini_model)
+	reviewer = AgenticReviewGenerator(
+		provider=cfg.agentic_provider,
+		model=cfg.agentic_model,
+		openai_api_key=cfg.openai_api_key or "",
+		google_api_key=cfg.google_api_key or "",
+		project_context_path=cfg.project_context_path,
+		timeout=cfg.agentic_timeout,
+	)
 	classifier = GeminiTagClassifier(api_key=cfg.gemini_api_key, model=cfg.gemini_model, max_labels=cfg.label_max)
 	jira = None
 	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token:

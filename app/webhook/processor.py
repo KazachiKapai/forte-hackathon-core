@@ -142,7 +142,7 @@ class WebhookProcessor:
 		project_id: int,
 		mr_iid: int,
 	) -> Tuple[str, Optional[List[str]]]:
-		review_body = ""
+		review_comments: List[str] = []
 		label_choice: Optional[List[str]] = None
 		with ThreadPoolExecutor(max_workers=2) as pool:
 			review_f = pool.submit(self.reviewer.generate_review, title, description, diff_text, changed_files, commit_messages)
@@ -152,7 +152,11 @@ class WebhookProcessor:
 			else:
 				label_f = None
 			try:
-				review_body = review_f.result()
+				review_res = review_f.result()
+				if isinstance(review_res, list):
+					review_comments = [c.to_markdown() if hasattr(c, "to_markdown") else str(c) for c in review_res if c]
+				elif review_res:
+					review_comments = [str(review_res)]
 			except Exception:
 				_LOGGER.exception("Failed to generate review", extra={"mr_iid": mr_iid, "project_id": project_id})
 			if label_f is not None:
@@ -160,6 +164,9 @@ class WebhookProcessor:
 					label_choice = label_f.result()
 				except Exception:
 					_LOGGER.exception("Classifier failed", extra={"mr_iid": mr_iid, "project_id": project_id})
+
+		# Compose a single review body for posting by caller (with version dedup)
+		review_body = "\n\n".join([b for b in review_comments if b])
 		return review_body, label_choice
 
 	def _augment_with_tickets(self, project: Any, mr_iid: int, title: str, description: str) -> str:
