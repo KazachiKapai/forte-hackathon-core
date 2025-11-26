@@ -46,8 +46,8 @@ class WebhookProcessor:
 			return
 		diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
 		description_aug = self._augment_with_tickets(project, mr_iid, title, description)
-		review_body, label_choice = self._review_and_classify(title, description_aug, diff_text, changed_files, commit_messages, project_id, mr_iid)
-		if review_body:
+		review_comments, label_choice = self._review_and_classify(title, description_aug, diff_text, changed_files, commit_messages, project_id, mr_iid)
+		if review_comments:
 			# Idempotency by MR version: embed and check a version marker
 			version_id = None
 			try:
@@ -58,20 +58,25 @@ class WebhookProcessor:
 			try:
 				notes = project.mergerequests.get(mr_iid).notes.list(per_page=20)
 				for n in notes:
-					if marker in (getattr(n, 'body', '') or ''):
+					if marker in (getattr(n, "body", "") or ""):
 						_LOGGER.info("Duplicate review detected for version, skipping post", extra={"mr_iid": mr_iid, "version": version_id})
-						review_body = ""
+						review_comments = []
 						break
 			except Exception:
 				pass
-			if version_id:
-				review_body = f"{marker}\n{review_body}"
-			try:
-				if review_body:
-					self.service.post_mr_note(project, mr_iid, review_body)
+			if review_comments:
+				review_comments = review_comments[:]
+				review_comments[0] = f"{marker}\n{review_comments[0]}"
+				for body in review_comments:
+					if not body:
+						continue
+					try:
+						self.service.post_mr_note(project, mr_iid, body)
+					except Exception:
+						_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
+						break
+				else:
 					_LOGGER.info("Posted MR review", extra={"event_uuid": event_uuid, "project_id": project_id, "mr_iid": mr_iid, "version": version_id})
-			except Exception:
-				_LOGGER.exception("Failed to post MR note", extra={"mr_iid": mr_iid, "project_id": project_id})
 		if label_choice:
 			try:
 				self.service.update_mr_labels(project, mr_iid, label_choice)
@@ -141,7 +146,7 @@ class WebhookProcessor:
 		commit_messages: List[str],
 		project_id: int,
 		mr_iid: int,
-	) -> Tuple[str, Optional[List[str]]]:
+	) -> Tuple[List[str], Optional[List[str]]]:
 		review_comments: List[str] = []
 		label_choice: Optional[List[str]] = None
 		with ThreadPoolExecutor(max_workers=2) as pool:
@@ -165,9 +170,7 @@ class WebhookProcessor:
 				except Exception:
 					_LOGGER.exception("Classifier failed", extra={"mr_iid": mr_iid, "project_id": project_id})
 
-		# Compose a single review body for posting by caller (with version dedup)
-		review_body = "\n\n".join([b for b in review_comments if b])
-		return review_body, label_choice
+		return review_comments, label_choice
 
 	def _augment_with_tickets(self, project: Any, mr_iid: int, title: str, description: str) -> str:
 		if not self.jira_service:
