@@ -2,13 +2,19 @@ import json
 from typing import Dict, List, Optional
 from ..config.logging_config import configure_logging
 import time
-from jira import JIRA
+
+try:
+	from jira import JIRA  # type: ignore
+except Exception:  # pragma: no cover
+	JIRA = None  # type: ignore
 
 _LOGGER = configure_logging()
 
 
 class JiraService:
 	def __init__(self, base_url: str, email: str, api_token: str, project_keys: Optional[List[str]] = None, max_issues: int = 5) -> None:
+		if JIRA is None:
+			raise RuntimeError("jira package is not installed; install `jira` to enable Jira integration")
 		self.base_url = base_url.rstrip("/")
 		self.email = email
 		self.api_token = api_token

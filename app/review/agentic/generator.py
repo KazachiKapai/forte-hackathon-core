@@ -1,11 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 
 from ..base import ReviewComment, ReviewGenerator
-<<<<<<< HEAD
 from ...config.logging_config import configure_logging
-=======
-from ...logging_config import configure_logging
->>>>>>> 77cbac2 (feat: add agentic langchain)
 from .agents import (
 	CodeSummaryAgent,
 	DiagramAgent,
