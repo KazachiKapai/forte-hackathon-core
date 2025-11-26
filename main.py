@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import uvicorn
 try:
@@ -47,6 +47,63 @@ def build_services(cfg: AppConfig) -> WebhookProcessor:
 	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret, tag_classifier=classifier, label_candidates=cfg.label_candidates, jira_service=jira)
 
 
+def _print_test_mr_result(res: Dict[str, Any]) -> None:
+	print(f"Created MR !{res['iid']} in project {res['project_path']}")
+	if res.get("web_url"):
+		print(res["web_url"])
+
+
+def _maybe_create_jira_issue(cfg: AppConfig, service: GitLabService, args: argparse.Namespace, res: Dict[str, Any]) -> None:
+	if not (cfg.jira_url and cfg.jira_email and cfg.jira_api_token and cfg.jira_project_keys):
+		return
+	try:
+		project = service.get_project(int(args.project_id))
+		jira = JiraService(
+			base_url=cfg.jira_url,
+			email=cfg.jira_email,
+			api_token=cfg.jira_api_token,
+			project_keys=cfg.jira_project_keys,
+			max_issues=cfg.jira_max_issues,
+		)
+		project_key = args.jira_project or (cfg.jira_project_keys[0] if cfg.jira_project_keys else None)
+		if not project_key:
+			print("No Jira project key set. Configure JIRA_PROJECT_KEYS or pass --jira-project KEY")
+			return
+		default_summary = "Add simple interest calculator, docs, and tests"
+		summary = args.title or f"{default_summary} (!{res['iid']})"
+		desc_lines = [
+			f"Auto-created for MR !{res['iid']} in {res['project_path']}",
+			f"URL: {res.get('web_url','')}",
+			"Labels: autotest, webhook",
+		]
+		files = res.get("files") or []
+		if files:
+			desc_lines.append("Affected files:")
+			for p in files:
+				desc_lines.append(f"- {p}")
+		if res.get("branch"):
+			desc_lines.append(f"Branch: {res.get('branch')}")
+		created = jira.create_issue(
+			project_key=project_key,
+			summary=summary,
+			description="\n".join(desc_lines),
+			labels=["autotest", "webhook"],
+		)
+		if created:
+			print(f"Created Jira issue {created['key']} {created['url']}")
+			try:
+				mr_url = res.get("web_url", "")
+				if mr_url:
+					jira.add_remote_link(created["key"], mr_url, title=f"GitLab MR !{res['iid']}")
+				service.post_mr_note(project, res["iid"], f"Linked Jira issue {created['key']} {created['url']}")
+				service.update_mr_labels(project, res["iid"], ["jira", f"jira-{created['key']}"])
+				service.prefix_mr_title(project, res["iid"], created["key"])
+			except Exception as e2:
+				print(f"Failed to link Jira issue to MR: {e2}")
+	except Exception as e:
+		print(f"Failed to create Jira issue: {e}")
+
+
 def cmd_register_hooks(args: argparse.Namespace) -> None:
 	cfg = AppConfig()
 	processor = build_services(cfg)
@@ -89,68 +146,28 @@ def cmd_list_projects(args: argparse.Namespace) -> None:
 def cmd_test_mr(args: argparse.Namespace) -> None:
 	cfg = AppConfig()
 	service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
-	project_id = int(args.project_id)
 	res = service.create_test_mr(
-		project_id=project_id,
+		project_id=int(args.project_id),
 		target_branch=args.target_branch,
 		branch=args.branch,
 		file_path=args.file_path,
 		title=args.title,
 	)
-	print(f"Created MR !{res['iid']} in project {res['project_path']}")
-	if res.get("web_url"):
-		print(res["web_url"])
-	# Optionally create a Jira ticket to make it discoverable by the webhook
-	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token and cfg.jira_project_keys:
-		try:
-			project = service.get_project(project_id)
-			jira = JiraService(
-				base_url=cfg.jira_url,
-				email=cfg.jira_email,
-				api_token=cfg.jira_api_token,
-				project_keys=cfg.jira_project_keys,
-				max_issues=cfg.jira_max_issues,
-			)
-			project_key = args.jira_project or (cfg.jira_project_keys[0] if cfg.jira_project_keys else None)
-			if not project_key:
-				print("No Jira project key set. Configure JIRA_PROJECT_KEYS or pass --jira-project KEY")
-				return
-			default_summary = "Add simple interest calculator, docs, and tests"
-			summary = args.title or f"{default_summary} (!{res['iid']})"
-			desc_lines = [
-				f"Auto-created for MR !{res['iid']} in {res['project_path']}",
-				f"URL: {res.get('web_url','')}",
-				"Labels: autotest, webhook",
-			]
-			files = res.get("files") or []
-			if files:
-				desc_lines.append("Affected files:")
-				for p in files:
-					desc_lines.append(f"- {p}")
-			if res.get("branch"):
-				desc_lines.append(f"Branch: {res.get('branch')}")
-			created = jira.create_issue(
-				project_key=project_key,
-				summary=summary,
-				description="\n".join(desc_lines),
-				labels=["autotest", "webhook"],
-			)
-			if created:
-				print(f"Created Jira issue {created['key']} {created['url']}")
-				# Link Jira issue to MR and annotate MR
-				try:
-					mr_url = res.get("web_url", "")
-					if mr_url:
-						jira.add_remote_link(created["key"], mr_url, title=f"GitLab MR !{res['iid']}")
-					# Add MR note with Jira reference and label MR
-					service.post_mr_note(project, res["iid"], f"Linked Jira issue {created['key']} {created['url']}")
-					service.update_mr_labels(project, res["iid"], ["jira", f"jira-{created['key']}"])
-					# Prefix MR title with Jira key for easy traceability
-					service.prefix_mr_title(project, res["iid"], created["key"])
-				except Exception as e2:
-					print(f"Failed to link Jira issue to MR: {e2}")
-		except Exception as e:
-			print(f"Failed to create Jira issue: {e}")
+	_print_test_mr_result(res)
+	_maybe_create_jira_issue(cfg, service, args, res)
+
+
+def cmd_test_mr2(args: argparse.Namespace) -> None:
+	cfg = AppConfig()
+	service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
+	res = service.create_test_mr_v2(
+		project_id=int(args.project_id),
+		target_branch=args.target_branch,
+		branch=args.branch,
+		title=args.title,
+	)
+	_print_test_mr_result(res)
+	_maybe_create_jira_issue(cfg, service, args, res)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -192,6 +209,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	p_test.add_argument("--title", help="Merge Request title")
 	p_test.add_argument("--jira-project", help="Jira project key to create test issue (overrides JIRA_PROJECT_KEYS[0])")
 	p_test.set_defaults(func=cmd_test_mr)
+	p_test2 = sub.add_parser("test-mr-2", help="Create an intentionally imperfect MR to showcase reviews")
+	p_test2.add_argument("--project-id", required=True, help="Target project ID")
+	p_test2.add_argument("--branch", help="Branch name to create/use (default: test-webhook-<timestamp>)")
+	p_test2.add_argument("--target-branch", help="Target branch (default: project default)")
+	p_test2.add_argument("--title", help="Merge Request title")
+	p_test2.add_argument("--jira-project", help="Jira project key to create test issue (overrides JIRA_PROJECT_KEYS[0])")
+	p_test2.set_defaults(func=cmd_test_mr2)
 	p_jls = sub.add_parser("list-jira-projects", help="List Jira projects (keys and names)")
 	p_jls.set_defaults(func=cmd_list_jira_projects)
 	return parser

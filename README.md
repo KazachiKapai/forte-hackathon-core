@@ -111,6 +111,12 @@ Create a test MR in a specific project (branch + commit + MR):
 python main.py test-mr --project-id 123 \
   --title "Webhook Test MR"
 ```
+- Create a “messy” MR that should trigger inline/naming/test findings:
+
+```bash
+python main.py test-mr-2 --project-id 123 \
+  --title "AI Review Playground"
+```
 
 Options:
 - `--branch` custom branch name (default: `test-webhook-<timestamp>`)

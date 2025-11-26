@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import gitlab
 
 from ..vcs.base import VCSService
-from ..review.base import ReviewGenerator
+from ..review.base import ReviewGenerator, InlineFinding
 from ..tagging.base import TagClassifier
 from ..integrations.jira_service import JiraService
 from ..config.logging_config import configure_logging
@@ -46,7 +46,9 @@ class WebhookProcessor:
 			return
 		diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
 		description_aug = self._augment_with_tickets(project, mr_iid, title, description)
-		review_comments, label_choice = self._review_and_classify(title, description_aug, diff_text, changed_files, commit_messages, project_id, mr_iid)
+		review_comments, label_choice, inline_findings = self._review_and_classify(
+			title, description_aug, diff_text, changed_files, commit_messages, project_id, mr_iid
+		)
 		if review_comments:
 			# Idempotency by MR version: embed and check a version marker
 			version_id = None
@@ -77,6 +79,15 @@ class WebhookProcessor:
 						break
 				else:
 					_LOGGER.info("Posted MR review", extra={"event_uuid": event_uuid, "project_id": project_id, "mr_iid": mr_iid, "version": version_id})
+		if inline_findings:
+			for finding in inline_findings[:10]:
+				try:
+					self.service.review_line(project, mr_iid, finding.body, finding.path, finding.line)
+				except Exception:
+					_LOGGER.exception(
+						"Failed to post inline finding",
+						extra={"mr_iid": mr_iid, "project_id": project_id, "path": finding.path, "line": finding.line},
+					)
 		if label_choice:
 			try:
 				self.service.update_mr_labels(project, mr_iid, label_choice)
@@ -146,9 +157,10 @@ class WebhookProcessor:
 		commit_messages: List[str],
 		project_id: int,
 		mr_iid: int,
-	) -> Tuple[List[str], Optional[List[str]]]:
+	) -> Tuple[List[str], Optional[List[str]], List[InlineFinding]]:
 		review_comments: List[str] = []
 		label_choice: Optional[List[str]] = None
+		inline_findings: List[InlineFinding] = []
 		with ThreadPoolExecutor(max_workers=2) as pool:
 			review_f = pool.submit(self.reviewer.generate_review, title, description, diff_text, changed_files, commit_messages)
 			if self.tag_classifier and self.label_candidates:
@@ -158,7 +170,13 @@ class WebhookProcessor:
 				label_f = None
 			try:
 				review_res = review_f.result()
-				if isinstance(review_res, list):
+				if hasattr(review_res, "comments"):
+					comments = getattr(review_res, "comments", []) or []
+					review_comments = [
+						c.to_markdown() if hasattr(c, "to_markdown") else str(c) for c in comments if c
+					]
+					inline_findings = list(getattr(review_res, "inline_findings", []) or [])
+				elif isinstance(review_res, list):
 					review_comments = [c.to_markdown() if hasattr(c, "to_markdown") else str(c) for c in review_res if c]
 				elif review_res:
 					review_comments = [str(review_res)]
@@ -170,7 +188,7 @@ class WebhookProcessor:
 				except Exception:
 					_LOGGER.exception("Classifier failed", extra={"mr_iid": mr_iid, "project_id": project_id})
 
-		return review_comments, label_choice
+		return review_comments, label_choice, inline_findings
 
 	def _augment_with_tickets(self, project: Any, mr_iid: int, title: str, description: str) -> str:
 		if not self.jira_service:
