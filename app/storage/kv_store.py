@@ -32,59 +32,39 @@ class FileKeyValueStore(KeyValueStore):
 		os.replace(tmp, path)
 
 
-class PostgresKeyValueStore(KeyValueStore):
-	def __init__(self, database_url: str) -> None:
-		self.database_url = database_url
+class MongoKeyValueStore(KeyValueStore):
+	def __init__(self, mongo_url: str, database: str = "app") -> None:
 		try:
-			import psycopg  # type: ignore
-			self._psycopg = psycopg
+			from pymongo import MongoClient  # type: ignore
+			from pymongo.collection import Collection  # type: ignore
 		except Exception as e:
-			raise RuntimeError("psycopg is required for PostgresKeyValueStore") from e
-		self._ensure_table()
-	
-	def _ensure_table(self) -> None:
+			raise RuntimeError("pymongo is required for MongoKeyValueStore") from e
+		self._MongoClient = MongoClient  # type: ignore[assignment]
+		self.client = self._MongoClient(mongo_url, connect=True)
+		self.db = self.client[database]
+		self.col = self.db.get_collection("kv_store")
+		# Ensure index on _id (name)
 		try:
-			with self._psycopg.connect(self.database_url, autocommit=True) as conn:  # type: ignore[attr-defined]
-				with conn.cursor() as cur:
-					cur.execute(
-						"""
-						CREATE TABLE IF NOT EXISTS kv_store (
-							name TEXT PRIMARY KEY,
-							data JSONB NOT NULL
-						)
-						"""
-					)
+			self.col.create_index("_id", unique=True)
 		except Exception:
-			_LOGGER.exception("Failed to create kv_store table")
-			raise
+			# Safe to ignore; default _id index exists
+			pass
 	
 	def get_json(self, name: str, default: Any) -> Any:
 		try:
-			with self._psycopg.connect(self.database_url, autocommit=True) as conn:  # type: ignore[attr-defined]
-				with conn.cursor() as cur:
-					cur.execute("SELECT data FROM kv_store WHERE name = %s", (name,))
-					row = cur.fetchone()
-					if not row:
-						return default
-					return row[0]
+			doc = self.col.find_one({"_id": name})
+			if not doc:
+				return default
+			return doc.get("data", default)
 		except Exception:
-			_LOGGER.exception("kv_store get_json failed")
+			_LOGGER.exception("kv_store get_json (mongo) failed")
 			return default
 	
 	def set_json(self, name: str, data: Any) -> None:
 		try:
-			with self._psycopg.connect(self.database_url, autocommit=True) as conn:  # type: ignore[attr-defined]
-				with conn.cursor() as cur:
-					cur.execute(
-						"""
-						INSERT INTO kv_store (name, data)
-						VALUES (%s, %s)
-						ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data
-						""",
-						(name, json.loads(json.dumps(data))),
-					)
+			self.col.update_one({"_id": name}, {"$set": {"data": json.loads(json.dumps(data))}}, upsert=True)
 		except Exception:
-			_LOGGER.exception("kv_store set_json failed")
+			_LOGGER.exception("kv_store set_json (mongo) failed")
 			raise
 
 
