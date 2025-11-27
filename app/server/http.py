@@ -1,10 +1,11 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from collections import deque
 import os
 import re
+import urllib.parse
 
 from ..webhook import WebhookProcessor
 from ..infra.task_executor import get_shared_executor
@@ -24,7 +25,38 @@ _seen_event_ids = deque(maxlen=_SEEN_EVENT_MAX)
 _seen_event_set = set()
 
 
-_FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+def _normalize_origin(url: str) -> str:
+	"""
+	Extract scheme://host[:port] and strip trailing slash.
+	Falls back to the raw value if parsing fails.
+	"""
+	try:
+		parsed = urllib.parse.urlparse(url.strip())
+		if parsed.scheme and parsed.netloc:
+			return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+	except Exception:
+		pass
+	return url.rstrip("/")
+
+
+def _get_frontend_origins() -> List[str]:
+	raw = os.environ.get("FRONTEND_URL", "http://localhost:3000") or "http://localhost:3000"
+	# Support comma-separated list
+	parts = [p.strip() for p in raw.split(",") if p.strip()]
+	if not parts:
+		parts = ["http://localhost:3000"]
+	origins = [_normalize_origin(p) for p in parts]
+	# Deduplicate while preserving order
+	seen = set()
+	out: List[str] = []
+	for o in origins:
+		if o not in seen:
+			seen.add(o)
+			out.append(o)
+	return out
+
+
+_FRONTEND_ORIGINS = _get_frontend_origins()
 
 
 def _record_event_uuid(event_uuid: Optional[str]) -> bool:
@@ -44,7 +76,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 	app = FastAPI()
 	app.add_middleware(
 		CORSMiddleware,
-		allow_origins=[_FRONTEND_URL],
+		allow_origins=_FRONTEND_ORIGINS,
 		allow_credentials=True,
 		allow_methods=["*"],
 		allow_headers=["*"],
