@@ -37,12 +37,35 @@ class AgentPayload:
 		return "\n".join(f"- {msg}" for msg in selected)
 
 
+	def files_with_line_numbers(self, max_files: int = 6, max_lines: int = 400) -> str:
+		if not self.changed_files:
+			return ""
+		blocks: List[str] = []
+		for path, content in self.changed_files[:max_files]:
+			lines: List[str] = []
+			for idx, line in enumerate(content.splitlines(), start=1):
+				lines.append(f"{idx:04d}: {line}")
+				if idx >= max_lines:
+					break
+			blocks.append(f"File: {path}\n" + "\n".join(lines))
+		return "\n\n".join(blocks)
+
+
+@dataclass
+class AgentFinding:
+	path: str
+	line: int
+	body: str
+	source: str = ""
+
+
 @dataclass
 class AgentResult:
 	key: str
 	content: str = ""
 	success: bool = True
 	error: Optional[str] = None
+	findings: List[AgentFinding] = field(default_factory=list)
 
 
 

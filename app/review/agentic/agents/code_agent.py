@@ -11,9 +11,9 @@ class CodeSummaryAgent(BaseAgent):
 		commits_blob = payload.commits_blob()
 		diff = payload.diff_text or "Diff not available."
 		return (
-			"You are a senior engineer summarizing a merge request for reviewers.\n"
-			"Explain what changed, why it matters, and which components or contracts were touched.\n"
-			"Respond in Markdown with sections: Scope, Key Changes, Follow-up Ideas.\n\n"
+			"You are a senior reviewer. Produce at most FIVE crisp bullet points (format '- text') "
+			"highlighting the most important code or diff facts: scope impact, risky area, key dependency, "
+			"and any follow-up work. Do not add headings or prose.\n\n"
 			f"Merge Request Title: {payload.title}\n"
 			f"Project Context: {payload.project_context.description}\n\n"
 			f"Diff Snippet:\n{diff}\n\n"

@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Tuple
 
-from ..base import ReviewComment, ReviewGenerator
+from ..base import InlineFinding, ReviewComment, ReviewGenerator, ReviewOutput
 from ...config.logging_config import configure_logging
 from .agents import (
 	CodeSummaryAgent,
@@ -11,7 +11,7 @@ from .agents import (
 )
 from .context_loader import load_project_context
 from .llm import build_llm_client
-from .models import AgentPayload, AgentResult
+from .models import AgentFinding, AgentPayload, AgentResult
 
 _LOGGER = configure_logging()
 
@@ -45,7 +45,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 		diff_text: str,
 		changed_files: List[Tuple[str, str]],
 		commit_messages: List[str],
-	) -> List[ReviewComment]:
+	) -> ReviewOutput:
 		context = load_project_context(self.project_context_path)
 		payload = AgentPayload(
 			title=title,
@@ -56,9 +56,20 @@ class AgenticReviewGenerator(ReviewGenerator):
 			project_context=context,
 		)
 		results: Dict[str, AgentResult] = {}
+		inline_findings: List[AgentFinding] = []
 		for agent in self.agents:
-			results[agent.key] = self._run_agent(agent, payload)
-		return self._compose_comments(payload, results)
+			res = self._run_agent(agent, payload)
+			results[agent.key] = res
+			if res.findings:
+				inline_findings.extend(res.findings)
+		comments = self._compose_comments(payload, results)
+		return ReviewOutput(
+			comments=comments,
+			inline_findings=[
+				InlineFinding(path=f.path, line=f.line, body=f.body, source=f.source or "")
+				for f in inline_findings
+			],
+		)
 
 	def _run_agent(self, agent, payload: AgentPayload) -> AgentResult:
 		if not self.client.available:
@@ -95,15 +106,27 @@ class AgenticReviewGenerator(ReviewGenerator):
 	def _build_summary_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
 		task = results.get("task_context")
 		code = results.get("code_summary")
-		if not task and not code:
+		bullets = self._collect_bullets(task, code)
+		if not bullets:
 			return None
-		body_parts: List[str] = []
-		body_parts.append(self._render_section("Task Overview", task))
-		body_parts.append(self._render_section("Code Summary", code))
-		body = "\n\n".join([part for part in body_parts if part])
-		if not body:
+		body = "\n".join(f"- {item}" for item in bullets[:5])
+		if not body.strip():
 			return None
 		return ReviewComment(title="Task and Diff Summary", body=body)
+
+	def _collect_bullets(self, *results: Optional[AgentResult]) -> List[str]:
+		bullets: List[str] = []
+		for result in results:
+			if not result or not result.content:
+				continue
+			for line in result.content.splitlines():
+				strip = line.strip()
+				if not strip:
+					continue
+				if strip.startswith("-"):
+					strip = strip[1:].strip()
+				bullets.append(strip)
+		return [b for b in bullets if b]
 
 	def _build_diagram_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
 		item = results.get("architecture_diagram")

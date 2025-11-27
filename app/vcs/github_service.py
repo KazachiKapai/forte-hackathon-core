@@ -33,6 +33,10 @@ class GitHubService(VCSService):
 		# Would post a PR comment: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
 		raise NotImplementedError("GitHubService.post_mr_note is not implemented yet")
 
+	def review_line(self, project: Any, mr_iid: int, body: str, file_path: str, new_line: int) -> None:
+		# Would post a review comment on a specific diff line
+		raise NotImplementedError("GitHubService.review_line is not implemented yet")
+
 	def get_mr_branches(self, project: Any, mr_iid: int) -> Tuple[str, str]:
 		# Would map to PR head.ref and base.ref
 		raise NotImplementedError("GitHubService.get_mr_branches is not implemented yet")

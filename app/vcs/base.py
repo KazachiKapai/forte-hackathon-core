@@ -25,6 +25,9 @@ class VCSService(ABC):
 	def post_mr_note(self, project: Any, mr_iid: int, body: str) -> None: ...
 
 	@abstractmethod
+	def review_line(self, project: Any, mr_iid: int, body: str, file_path: str, new_line: int) -> None: ...
+
+	@abstractmethod
 	def get_mr_branches(self, project: Any, mr_iid: int) -> Tuple[str, str]: ...
 
 	@abstractmethod

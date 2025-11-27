@@ -2,20 +2,21 @@ from typing import Any, Dict, List, Tuple
 from pathlib import Path
 import json
 from app.review.agentic.generator import AgenticReviewGenerator
-from app.review.agentic.models import AgentPayload, AgentResult, ProjectContext
-from app.review.base import ReviewComment
+from app.review.agentic.models import AgentFinding, AgentPayload, AgentResult, ProjectContext
+from app.review.base import ReviewComment, ReviewOutput
 
 
 class FakeAgent:
-	def __init__(self, key: str, text: str, success: bool = True):
+	def __init__(self, key: str, text: str, success: bool = True, findings=None):
 		self.key = key
 		self._text = text
 		self.title = key
 		self.success = success
+		self._findings = findings or []
 
 	def execute(self, client: Any, payload: AgentPayload) -> AgentResult:
 		if self.success:
-			return AgentResult(key=self.key, content=self._text, success=True)
+			return AgentResult(key=self.key, content=self._text, success=True, findings=list(self._findings))
 		return AgentResult(key=self.key, success=False, error="fail")
 
 
@@ -42,15 +43,16 @@ def test_generator_composes_expected_comments(tmp_path):
 	gen.client.model = object()
 	# Inject deterministic agents
 	gen.agents = [
-		FakeAgent("task_context", "task"),
-		FakeAgent("code_summary", "code"),
+		FakeAgent("task_context", "- task"),
+		FakeAgent("code_summary", "- code"),
 		FakeAgent("architecture_diagram", "graph TD; A-->B"),
-		FakeAgent("naming_quality", "names"),
-		FakeAgent("test_coverage", "tests"),
+		FakeAgent("naming_quality", "- names", findings=[AgentFinding(path="a.py", line=7, body="Bad name")]),
+		FakeAgent("test_coverage", "- tests", findings=[AgentFinding(path="tests/test_simple.py", line=3, body="Missing negative case")]),
 	]
 	pl = _payload()
-	comments = gen.generate_review(**pl)
-	assert isinstance(comments, list)
+	output = gen.generate_review(**pl)
+	assert isinstance(output, ReviewOutput)
+	comments = output.comments
 	# Expect up to 4 composed comments (summary combines task+code)
 	titles = [c.title for c in comments]
 	assert "Task and Diff Summary" in titles
@@ -60,6 +62,9 @@ def test_generator_composes_expected_comments(tmp_path):
 	# Body content from agents present
 	body = "\n\n".join([c.body for c in comments])
 	assert "task" in body and "code" in body and "names" in body and "tests" in body
+	assert len(output.inline_findings) == 2
+	assert {f.path for f in output.inline_findings} == {"a.py", "tests/test_simple.py"}
+	assert output.inline_findings[0].line == 7
 
 
 def test_generator_fallback_when_llm_unavailable(tmp_path):
@@ -69,9 +74,9 @@ def test_generator_fallback_when_llm_unavailable(tmp_path):
 	# Even with agents injected, _run_agent will short-circuit
 	gen.agents = [FakeAgent("task_context", "t")]
 	pl = _payload()
-	comments = gen.generate_review(**pl)
-	assert len(comments) == 1
-	assert comments[0].title == "Agentic Reviewer"
-	assert "Agentic pipeline unavailable" in comments[0].body
+	output = gen.generate_review(**pl)
+	assert len(output.comments) == 1
+	assert output.comments[0].title == "Agentic Reviewer"
+	assert "Agentic pipeline unavailable" in output.comments[0].body
 
 
