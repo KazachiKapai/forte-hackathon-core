@@ -1,7 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple
-import time
-import gitlab
 import base64
+import time
+from typing import Any
+
+import gitlab
+
 from .base import VCSService
 
 
@@ -12,10 +14,10 @@ class GitLabService(VCSService):
 	def get_project(self, project_id: int) -> Any:
 		return self.client.projects.get(project_id)
 
-	def list_membership_projects(self) -> List[Any]:
+	def list_membership_projects(self) -> list[Any]:
 		return self.client.projects.list(membership=True, all=True)
 
-	def ensure_webhook_for_project(self, project: Any, webhook_url: str, secret_token: str) -> Tuple[bool, Optional[int]]:
+	def ensure_webhook_for_project(self, project: Any, webhook_url: str, secret_token: str) -> tuple[bool, int | None]:
 		existing_hooks = project.hooks.list(all=True)
 		for hook in existing_hooks:
 			if hook.url == webhook_url and getattr(hook, "merge_requests_events", False):
@@ -45,7 +47,7 @@ class GitLabService(VCSService):
 		if not diffs_page:
 			return "No diffs found for this merge request."
 		diff_obj = mr.diffs.get(diffs_page[0].get_id())
-		collected: List[str] = []
+		collected: list[str] = []
 		total_len = 0
 		for d in diff_obj.diffs:
 			one = f"File: {d.get('new_path') or d.get('old_path')}\n{d.get('diff', '')}\n"
@@ -80,11 +82,11 @@ class GitLabService(VCSService):
 		except Exception:
 			self.post_mr_note(project, mr_iid, f"{body}\n(path: {file_path}, line: {new_line})")
 
-	def get_mr_branches(self, project: Any, mr_iid: int) -> Tuple[str, str]:
+	def get_mr_branches(self, project: Any, mr_iid: int) -> tuple[str, str]:
 		mr = project.mergerequests.get(mr_iid)
 		return mr.source_branch, mr.target_branch
 
-	def get_mr_commits(self, project: Any, mr_iid: int, limit: int = 50) -> List[Dict[str, Any]]:
+	def get_mr_commits(self, project: Any, mr_iid: int, limit: int = 50) -> list[dict[str, Any]]:
 		mr = project.mergerequests.get(mr_iid)
 		try:
 			commits = mr.commits()
@@ -93,7 +95,7 @@ class GitLabService(VCSService):
 			source = mr.source_branch
 			commits = project.commits.list(ref_name=source, per_page=limit)
 		# Normalize to dicts; RESTObjectList may not be sliceable
-		result: List[Dict[str, Any]] = []
+		result: list[dict[str, Any]] = []
 		count = 0
 		for c in commits:
 			if isinstance(c, dict):
@@ -108,7 +110,7 @@ class GitLabService(VCSService):
 				break
 		return result
 
-	def get_changed_files_with_content(self, project: Any, mr_iid: int, max_chars_per_file: int = 100_000) -> List[Tuple[str, str]]:
+	def get_changed_files_with_content(self, project: Any, mr_iid: int, max_chars_per_file: int = 100_000) -> list[tuple[str, str]]:
 		"""
 		Returns list of (path, content) for changed files using the MR's source branch.
 		Skips deleted files. Content is truncated per file for safety.
@@ -119,14 +121,14 @@ class GitLabService(VCSService):
 		if not diffs_page:
 			return []
 		diff_obj = mr.diffs.get(diffs_page[0].get_id())
-		paths: List[str] = []
+		paths: list[str] = []
 		for d in diff_obj.diffs:
 			if d.get("deleted_file"):
 				continue
 			path = d.get("new_path") or d.get("old_path")
 			if path and path not in paths:
 				paths.append(path)
-		results: List[Tuple[str, str]] = []
+		results: list[tuple[str, str]] = []
 		for path in paths:
 			try:
 				f = project.files.get(file_path=path, ref=source_branch)
@@ -147,13 +149,13 @@ class GitLabService(VCSService):
 	def _create_test_mr_from_payload(
 		self,
 		project_id: int,
-		files_payload: List[Tuple[str, str]],
+		files_payload: list[tuple[str, str]],
 		mr_title: str,
 		mr_description: str,
-		target_branch: Optional[str],
-		branch: Optional[str],
+		target_branch: str | None,
+		branch: str | None,
 		commit_message: str,
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		project = self.client.projects.get(project_id)
 		t_branch = target_branch or getattr(project, "default_branch", None) or "main"
 		branch_name = branch or f"test-webhook-{int(time.time())}"
@@ -161,7 +163,7 @@ class GitLabService(VCSService):
 			project.branches.create({"branch": branch_name, "ref": t_branch})
 		except Exception:
 			pass
-		created_files: List[str] = []
+		created_files: list[str] = []
 		actions = []
 		for path, content in files_payload:
 			created_files.append(path)
@@ -192,11 +194,11 @@ class GitLabService(VCSService):
 	def create_test_mr(
 		self,
 		project_id: int,
-		target_branch: Optional[str] = None,
-		branch: Optional[str] = None,
-		file_path: Optional[str] = None,
-		title: Optional[str] = None,
-	) -> Dict[str, Any]:
+		target_branch: str | None = None,
+		branch: str | None = None,
+		file_path: str | None = None,
+		title: str | None = None,
+	) -> dict[str, Any]:
 		now_ts = int(time.time())
 		files_payload = [
 			(
@@ -258,10 +260,10 @@ class GitLabService(VCSService):
 	def create_test_mr_v2(
 		self,
 		project_id: int,
-		target_branch: Optional[str] = None,
-		branch: Optional[str] = None,
-		title: Optional[str] = None,
-	) -> Dict[str, Any]:
+		target_branch: str | None = None,
+		branch: str | None = None,
+		title: str | None = None,
+	) -> dict[str, Any]:
 		files_payload = [
 			(
 				"src/payments/simple_interest.py",
@@ -322,7 +324,7 @@ class GitLabService(VCSService):
 			commit_message="feat: add intentionally incomplete simple interest handler",
 		)
 
-	def get_latest_mr_version_id(self, project: Any, mr_iid: int) -> Optional[str]:
+	def get_latest_mr_version_id(self, project: Any, mr_iid: int) -> str | None:
 		try:
 			versions = project.mergerequests.get(mr_iid).versions()
 			if not versions:
@@ -333,7 +335,7 @@ class GitLabService(VCSService):
 		except Exception:
 			return None
 
-	def update_mr_labels(self, project: Any, mr_iid: int, add_labels: List[str]) -> None:
+	def update_mr_labels(self, project: Any, mr_iid: int, add_labels: list[str]) -> None:
 		if not add_labels:
 			return
 		mr = project.mergerequests.get(mr_iid)

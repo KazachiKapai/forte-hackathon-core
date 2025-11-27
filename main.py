@@ -1,69 +1,47 @@
 import argparse
-import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import uvicorn
+
 try:
 	from dotenv import load_dotenv  # type: ignore
 	load_dotenv()
 except Exception:
 	pass
 
-from app.config import AppConfig, read_env, configure_logging
-from app.vcs.gitlab_service import GitLabService
-from app.review.agentic import AgenticReviewGenerator
-from app.tagging.gemini_classifier import GeminiTagClassifier
-from app.webhook import WebhookProcessor
-from app.server import create_app
+from app.config import AppConfig, configure_logging
 from app.integrations.jira_service import JiraService
+from app.server import create_app
+from app.server.bootstrap import build_services as _bootstrap_build_services
+from app.vcs.gitlab_service import GitLabService
 
 _LOGGER = configure_logging()
 
 
-def build_services(cfg: AppConfig) -> WebhookProcessor:
-	gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
-	reviewer = AgenticReviewGenerator(
-		provider=cfg.agentic_provider,
-		model=cfg.agentic_model,
-		openai_api_key=cfg.openai_api_key or "",
-		google_api_key=cfg.google_api_key or "",
-		project_context_path=cfg.project_context_path,
-		timeout=cfg.agentic_timeout,
-	)
-	classifier = GeminiTagClassifier(api_key=cfg.gemini_api_key, model=cfg.gemini_model, max_labels=cfg.label_max)
-	jira = None
-	if cfg.jira_url and cfg.jira_email and cfg.jira_api_token:
-		jira = JiraService(
-			base_url=cfg.jira_url,
-			email=cfg.jira_email,
-			api_token=cfg.jira_api_token,
-			project_keys=cfg.jira_project_keys,
-			max_issues=cfg.jira_max_issues,
-		)
-		_LOGGER.info("Jira integration enabled", extra={"projects": cfg.jira_project_keys, "max_issues": cfg.jira_max_issues})
-	else:
-		_LOGGER.info("Jira integration disabled (missing JIRA_URL/JIRA_EMAIL/JIRA_API_TOKEN)")
-	return WebhookProcessor(service=gl_service, reviewer=reviewer, webhook_secret=cfg.webhook_secret, tag_classifier=classifier, label_candidates=cfg.label_candidates, jira_service=jira)
+# Backward-compatible shim; delegate to server bootstrap
+def build_services(cfg: AppConfig):
+	return _bootstrap_build_services(cfg)
 
 
-def _print_test_mr_result(res: Dict[str, Any]) -> None:
+def _print_test_mr_result(res: dict[str, Any]) -> None:
 	print(f"Created MR !{res['iid']} in project {res['project_path']}")
 	if res.get("web_url"):
 		print(res["web_url"])
 
 
-def _maybe_create_jira_issue(cfg: AppConfig, service: GitLabService, args: argparse.Namespace, res: Dict[str, Any]) -> None:
+def _maybe_create_jira_issue(cfg: AppConfig, service: GitLabService, args: argparse.Namespace, res: dict[str, Any]) -> None:
 	if not (cfg.jira_url and cfg.jira_email and cfg.jira_api_token and cfg.jira_project_keys):
 		return
 	try:
-		project = service.get_project(int(args.project_id))
+		_ = service.get_project(int(args.project_id))
 		jira = JiraService(
 			base_url=cfg.jira_url,
 			email=cfg.jira_email,
 			api_token=cfg.jira_api_token,
 			project_keys=cfg.jira_project_keys,
 			max_issues=cfg.jira_max_issues,
+			search_window=cfg.jira_search_window,
 		)
 		project_key = args.jira_project or (cfg.jira_project_keys[0] if cfg.jira_project_keys else None)
 		if not project_key:
@@ -95,9 +73,6 @@ def _maybe_create_jira_issue(cfg: AppConfig, service: GitLabService, args: argpa
 				mr_url = res.get("web_url", "")
 				if mr_url:
 					jira.add_remote_link(created["key"], mr_url, title=f"GitLab MR !{res['iid']}")
-				service.post_mr_note(project, res["iid"], f"Linked Jira issue {created['key']} {created['url']}")
-				service.update_mr_labels(project, res["iid"], ["jira", f"jira-{created['key']}"])
-				service.prefix_mr_title(project, res["iid"], created["key"])
 			except Exception as e2:
 				print(f"Failed to link Jira issue to MR: {e2}")
 	except Exception as e:

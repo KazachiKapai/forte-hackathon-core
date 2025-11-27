@@ -1,6 +1,6 @@
 from app.config import AppConfig
+from app.server.bootstrap import build_services
 from app.server.http import create_app
-from main import build_services
 
 # Construct FastAPI ASGI app for Vercel Python runtime.
 _cfg = AppConfig()

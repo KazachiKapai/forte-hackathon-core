@@ -1,5 +1,5 @@
-from .base import BaseAgent
 from ..models import AgentPayload
+from .base import BaseAgent
 
 
 class CodeSummaryAgent(BaseAgent):
@@ -11,9 +11,11 @@ class CodeSummaryAgent(BaseAgent):
 		commits_blob = payload.commits_blob()
 		diff = payload.diff_text or "Diff not available."
 		return (
-			"You are a senior reviewer. Produce at most FIVE crisp bullet points (format '- text') "
-			"highlighting the most important code or diff facts: scope impact, risky area, key dependency, "
-			"and any follow-up work. Do not add headings or prose.\n\n"
+			"You are a senior reviewer. Follow STRICT rules:\n"
+			"- Produce at most FIVE bullets, each max 14 words, format exactly '- <text>'.\n"
+			"- Use only evidence in the diff/files/commits. If uncertain, omit.\n"
+			"- Focus on: scope impact, risky area, key dependency, notable follow-up.\n"
+			"- No headings, no prose outside bullets.\n\n"
 			f"Merge Request Title: {payload.title}\n"
 			f"Project Context: {payload.project_context.description}\n\n"
 			f"Diff Snippet:\n{diff}\n\n"

@@ -1,7 +1,6 @@
 import os
 import threading
 import time
-from typing import Dict, Tuple, Optional
 
 
 class _DedupeStore:
@@ -9,7 +8,7 @@ class _DedupeStore:
 		self._ttl = max(1, ttl_seconds)
 		self._capacity = max(128, capacity)
 		self._lock = threading.Lock()
-		self._data: Dict[str, float] = {}
+		self._data: dict[str, float] = {}
 
 	def should_process(self, key: str) -> bool:
 		"""
@@ -39,7 +38,7 @@ class _DedupeStore:
 				self._data.pop(k, None)
 
 
-_singleton: Optional[_DedupeStore] = None
+_singleton: _DedupeStore | None = None
 _lock = threading.Lock()
 
 

@@ -1,11 +1,11 @@
 import os
-from typing import Optional
+
+from ..config.logging_config import configure_logging
 from .base import KeyValueStore
 from .kv_store import FileKeyValueStore, MongoKeyValueStore
-from ..config.logging_config import configure_logging
 
 _LOGGER = configure_logging()
-_store: Optional[KeyValueStore] = None
+_store: KeyValueStore | None = None
 
 
 def get_kv_store() -> KeyValueStore:

@@ -1,8 +1,7 @@
-import os
+import importlib
 import sys
 from pathlib import Path
-import importlib
-import types
+
 import pytest
 from fastapi.testclient import TestClient
 

@@ -1,5 +1,4 @@
 import argparse
-from typing import Dict
 
 import main
 
@@ -18,7 +17,7 @@ def test_cmd_test_mr_2_invokes_service(monkeypatch, capsys):
 			self.calls.append(kwargs)
 			return {"iid": 7, "project_path": "demo/path", "web_url": "https://example/mr/7", "branch": "feature/demo", "files": ["a.py"]}
 
-	dummy_container: Dict[str, DummyService] = {}
+	dummy_container: dict[str, DummyService] = {}
 
 	def fake_gitlab_service(url, token):
 		svc = DummyService(url, token)

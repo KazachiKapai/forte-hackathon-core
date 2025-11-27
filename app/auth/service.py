@@ -1,8 +1,7 @@
-from typing import Any, Dict, Optional
 import os
-import urllib.request
-import urllib.parse
-from ..storage.json_store import load_json, save_json
+from typing import Any
+
+from .provider import GitLabOAuthProvider, OAuthProvider
 
 GITLAB_URL = os.environ.get("GITLAB_URL", "https://gitlab.com")
 OAUTH_CLIENT_ID = os.environ.get("GITLAB_OAUTH_CLIENT_ID")
@@ -11,43 +10,30 @@ OAUTH_REDIRECT_URI = os.environ.get("GITLAB_OAUTH_REDIRECT_URI", "http://localho
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 
+_provider: OAuthProvider | None = None
+
+
+def _get_provider() -> OAuthProvider:
+	global _provider
+	if _provider is None:
+		_provider = GitLabOAuthProvider(
+			base_url=GITLAB_URL,
+			client_id=OAUTH_CLIENT_ID,
+			client_secret=OAUTH_CLIENT_SECRET,
+			redirect_uri=OAUTH_REDIRECT_URI,
+		)
+	return _provider
+
+
+def exchange_code(code: str) -> dict[str, Any]:
+	return _get_provider().exchange_code(code)
+
+
+def api_get_user(access_token: str) -> dict[str, Any]:
+	return _get_provider().api_get_user(access_token)
+
+
 def build_authorize_url(state: str) -> str:
-	params = {
-		"client_id": OAUTH_CLIENT_ID or "",
-		"redirect_uri": OAUTH_REDIRECT_URI,
-		"response_type": "code",
-		"scope": "read_user read_api",
-		"state": state,
-	}
-	return f"{GITLAB_URL}/oauth/authorize?{urllib.parse.urlencode(params)}"
-
-
-def exchange_code(code: str) -> Dict[str, Any]:
-	data = {
-		"client_id": OAUTH_CLIENT_ID or "",
-		"client_secret": OAUTH_CLIENT_SECRET or "",
-		"code": code,
-		"grant_type": "authorization_code",
-		"redirect_uri": OAUTH_REDIRECT_URI,
-	}
-	req = urllib.request.Request(
-		f"{GITLAB_URL}/oauth/token",
-		data=urllib.parse.urlencode(data).encode("utf-8"),
-		headers={"Content-Type": "application/x-www-form-urlencoded"},
-		method="POST",
-	)
-	with urllib.request.urlopen(req, timeout=15) as resp:
-		body = resp.read().decode("utf-8")
-		return __import__("json").loads(body)
-
-
-def api_get_user(access_token: str) -> Dict[str, Any]:
-	req = urllib.request.Request(
-		f"{GITLAB_URL}/api/v4/user",
-		headers={"Authorization": f"Bearer {access_token}"},
-	)
-	with urllib.request.urlopen(req, timeout=15) as resp:
-		body = resp.read().decode("utf-8")
-		return __import__("json").loads(body)
+	return _get_provider().build_authorize_url(state)
 
 

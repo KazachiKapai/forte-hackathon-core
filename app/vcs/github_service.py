@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
 from .base import VCSService
 
 
@@ -18,10 +19,10 @@ class GitHubService(VCSService):
 	def get_project(self, project_id: int) -> Any:
 		raise NotImplementedError("GitHubService.get_project is not implemented yet")
 
-	def list_membership_projects(self) -> List[Any]:
+	def list_membership_projects(self) -> list[Any]:
 		raise NotImplementedError("GitHubService.list_membership_projects is not implemented yet")
 
-	def ensure_webhook_for_project(self, project: Any, webhook_url: str, secret_token: str) -> Tuple[bool, Optional[int]]:
+	def ensure_webhook_for_project(self, project: Any, webhook_url: str, secret_token: str) -> tuple[bool, int | None]:
 		# Would create/update a repo webhook with pull_request events on GitHub
 		raise NotImplementedError("GitHubService.ensure_webhook_for_project is not implemented yet")
 
@@ -37,19 +38,19 @@ class GitHubService(VCSService):
 		# Would post a review comment on a specific diff line
 		raise NotImplementedError("GitHubService.review_line is not implemented yet")
 
-	def get_mr_branches(self, project: Any, mr_iid: int) -> Tuple[str, str]:
+	def get_mr_branches(self, project: Any, mr_iid: int) -> tuple[str, str]:
 		# Would map to PR head.ref and base.ref
 		raise NotImplementedError("GitHubService.get_mr_branches is not implemented yet")
 
-	def get_mr_commits(self, project: Any, mr_iid: int, limit: int = 50) -> List[Dict[str, Any]]:
+	def get_mr_commits(self, project: Any, mr_iid: int, limit: int = 50) -> list[dict[str, Any]]:
 		# GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
 		raise NotImplementedError("GitHubService.get_mr_commits is not implemented yet")
 
-	def get_changed_files_with_content(self, project: Any, mr_iid: int, max_chars_per_file: int = 100_000) -> List[Tuple[str, str]]:
+	def get_changed_files_with_content(self, project: Any, mr_iid: int, max_chars_per_file: int = 100_000) -> list[tuple[str, str]]:
 		# GET /repos/{owner}/{repo}/pulls/{pull_number}/files then fetch file blobs from head SHA
 		raise NotImplementedError("GitHubService.get_changed_files_with_content is not implemented yet")
 
-	def create_test_mr(self, project_id: int, target_branch: Optional[str] = None, branch: Optional[str] = None, file_path: Optional[str] = None, title: Optional[str] = None) -> Dict[str, Any]:
+	def create_test_mr(self, project_id: int, target_branch: str | None = None, branch: str | None = None, file_path: str | None = None, title: str | None = None) -> dict[str, Any]:
 		# Would create a branch, commit, and open a PR
 		raise NotImplementedError("GitHubService.create_test_mr is not implemented yet")
 

@@ -65,7 +65,6 @@ def test_test_coverage_prompt_requests_json_with_findings():
 
 def test_naming_agent_parses_code_fence_json():
 	agent = NamingQualityAgent()
-	payload = _payload()
 	response = """```json
 {
   "summary": ["bad doc"],

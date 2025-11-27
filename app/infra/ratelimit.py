@@ -1,7 +1,6 @@
 import os
 import threading
 import time
-from typing import Dict
 
 
 class _TokenBucket:
@@ -27,7 +26,7 @@ class RateLimiter:
 		rate_per_sec = max(1, per_minute) / 60.0
 		self._rate_per_sec = rate_per_sec
 		self._burst = max(1, burst)
-		self._buckets: Dict[str, _TokenBucket] = {}
+		self._buckets: dict[str, _TokenBucket] = {}
 		self._lock = threading.Lock()
 
 	def allow(self, key: str) -> bool:

@@ -1,9 +1,10 @@
-from typing import Any, Dict, List, Tuple
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Any
+
 from app.review.agentic.generator import AgenticReviewGenerator
-from app.review.agentic.models import AgentFinding, AgentPayload, AgentResult, ProjectContext
-from app.review.base import ReviewComment, ReviewOutput
+from app.review.agentic.models import AgentFinding, AgentPayload, AgentResult
+from app.review.base import ReviewOutput
 
 
 class FakeAgent:
@@ -20,7 +21,7 @@ class FakeAgent:
 		return AgentResult(key=self.key, success=False, error="fail")
 
 
-def _payload() -> Dict[str, Any]:
+def _payload() -> dict[str, Any]:
 	return {
 		"title": "Title",
 		"description": "Desc",

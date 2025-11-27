@@ -1,7 +1,8 @@
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any
 
 
 class TaskExecutor:
@@ -18,7 +19,7 @@ class TaskExecutor:
 
 
 _singleton_lock = threading.Lock()
-_singleton_executor: Optional[TaskExecutor] = None
+_singleton_executor: TaskExecutor | None = None
 
 
 def get_shared_executor() -> TaskExecutor:

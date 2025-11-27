@@ -1,5 +1,7 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from fastapi import APIRouter, Request
+
 from ..security.session import require_auth
 from . import service as repos_service
 
@@ -7,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/api/repositories")
-async def list_repositories(request: Request, search: Optional[str] = None, page: int = 1, per_page: int = 10) -> Dict[str, Any]:
+async def list_repositories(request: Request, search: str | None = None, page: int = 1, per_page: int = 10) -> dict[str, Any]:
 	sess = require_auth(request)
 	user_id = sess["user"]["id"]
 	items = repos_service.load_repos(user_id)
@@ -21,7 +23,7 @@ async def list_repositories(request: Request, search: Optional[str] = None, page
 
 
 @router.post("/api/repositories/sync")
-async def sync_repositories_route(request: Request) -> Dict[str, Any]:
+async def sync_repositories_route(request: Request) -> dict[str, Any]:
 	sess = require_auth(request)
 	user_id = sess["user"]["id"]
 	count = repos_service.sync_repositories(user_id)

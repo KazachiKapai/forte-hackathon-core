@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from ...config.logging_config import configure_logging
 
@@ -6,7 +6,11 @@ _LOGGER = configure_logging()
 
 try:
 	from langchain_core.language_models.chat_models import BaseChatModel  # type: ignore
-	from langchain_core.messages import AIMessage, BaseMessage, HumanMessage  # type: ignore
+	from langchain_core.messages import (  # type: ignore
+	    AIMessage,
+	    BaseMessage,
+	    HumanMessage,
+	)
 except Exception:  # pragma: no cover
 	BaseChatModel = Any  # type: ignore
 	AIMessage = Any  # type: ignore
@@ -29,8 +33,8 @@ class LLMFactory:
 		self,
 		provider: str,
 		model: str,
-		openai_api_key: Optional[str],
-		google_api_key: Optional[str],
+		openai_api_key: str | None,
+		google_api_key: str | None,
 		timeout: float,
 	) -> None:
 		self.provider = (provider or "").strip().lower() or "openai"
@@ -39,7 +43,7 @@ class LLMFactory:
 		self.google_api_key = google_api_key
 		self.timeout = timeout
 
-	def build(self) -> Optional[BaseChatModel]:
+	def build(self) -> BaseChatModel | None:
 		if self.provider == "openai":
 			if ChatOpenAI is None:
 				raise RuntimeError("langchain-openai is not installed")
@@ -56,7 +60,7 @@ class LLMFactory:
 
 
 class LLMClient:
-	def __init__(self, model: Optional[BaseChatModel], unavailable_reason: Optional[str] = None) -> None:
+	def __init__(self, model: BaseChatModel | None, unavailable_reason: str | None = None) -> None:
 		self.model = model
 		self.unavailable_reason = unavailable_reason
 
@@ -95,7 +99,7 @@ class LLMClient:
 		return str(response)
 
 
-def build_llm_client(provider: str, model: str, openai_api_key: Optional[str], google_api_key: Optional[str], timeout: float) -> LLMClient:
+def build_llm_client(provider: str, model: str, openai_api_key: str | None, google_api_key: str | None, timeout: float) -> LLMClient:
 	try:
 		backend = LLMFactory(provider, model, openai_api_key, google_api_key, timeout).build()
 		return LLMClient(backend)

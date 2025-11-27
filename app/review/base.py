@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Tuple
 
 
 @dataclass
@@ -24,8 +23,8 @@ class InlineFinding:
 
 @dataclass
 class ReviewOutput:
-	comments: List[ReviewComment] = field(default_factory=list)
-	inline_findings: List[InlineFinding] = field(default_factory=list)
+	comments: list[ReviewComment] = field(default_factory=list)
+	inline_findings: list[InlineFinding] = field(default_factory=list)
 
 
 class ReviewGenerator(ABC):
@@ -35,8 +34,8 @@ class ReviewGenerator(ABC):
 		title: str,
 		description: str,
 		diff_text: str,
-		changed_files: List[Tuple[str, str]],
-		commit_messages: List[str],
+		changed_files: list[tuple[str, str]],
+		commit_messages: list[str],
 	) -> ReviewOutput:
 		...
 

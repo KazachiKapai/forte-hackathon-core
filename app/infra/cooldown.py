@@ -1,7 +1,6 @@
 import os
 import threading
 import time
-from typing import Dict, Optional
 
 
 class _CooldownStore:
@@ -9,7 +8,7 @@ class _CooldownStore:
 		self._ttl = max(1, ttl_seconds)
 		self._capacity = max(256, capacity)
 		self._lock = threading.Lock()
-		self._data: Dict[str, float] = {}
+		self._data: dict[str, float] = {}
 
 	def acquire(self, key: str) -> bool:
 		"""
@@ -32,7 +31,7 @@ class _CooldownStore:
 				self._data.pop(k, None)
 
 
-_singleton: Optional[_CooldownStore] = None
+_singleton: _CooldownStore | None = None
 _lock = threading.Lock()
 
 

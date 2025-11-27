@@ -1,8 +1,8 @@
-from .task_agent import TaskContextAgent
 from .code_agent import CodeSummaryAgent
-from .naming_agent import NamingQualityAgent
-from .test_agent import TestCoverageAgent
 from .diagram_agent import DiagramAgent
+from .naming_agent import NamingQualityAgent
+from .task_agent import TaskContextAgent
+from .test_agent import TestCoverageAgent
 
 __all__ = [
 	"TaskContextAgent",

@@ -1,9 +1,8 @@
 import os
-from typing import Optional, List
 from pathlib import Path
 
 
-def read_env(name: str, default: Optional[str] = None, required: bool = False) -> Optional[str]:
+def read_env(name: str, default: str | None = None, required: bool = False) -> str | None:
 	value = os.environ.get(name, default)
 	if required and (value is None or value == ""):
 		raise RuntimeError(f"Missing required environment variable: {name}")
@@ -22,12 +21,12 @@ class AppConfig:
 		self.gemini_api_key = read_env("GEMINI_API_KEY")
 		self.gemini_model = read_env("GEMINI_MODEL", "gemini-2.5-pro")
 		self.env = (read_env("ENV", "prod") or "prod").lower()
-		self.label_candidates: List[str] = self._read_label_candidates()
+		self.label_candidates: list[str] = self._read_label_candidates()
 		self.label_max: int = self._read_label_max()
 		self.jira_url = read_env("JIRA_URL")
 		self.jira_email = read_env("JIRA_EMAIL")
 		self.jira_api_token = read_env("JIRA_API_TOKEN")
-		self.jira_project_keys: List[str] = self._read_jira_projects()
+		self.jira_project_keys: list[str] = self._read_jira_projects()
 		self.jira_max_issues: int = int(read_env("JIRA_MAX_ISSUES", "5") or "5")
 		self.jira_search_window: str = read_env("JIRA_SEARCH_WINDOW", "-30d") or "-30d"
 		self.agentic_provider = read_env("AGENTIC_PROVIDER", "google")
@@ -44,14 +43,14 @@ class AppConfig:
 			self.agentic_timeout = 60.0
 
 	@staticmethod
-	def _normalize_model_name(provider: Optional[str], model: Optional[str]) -> Optional[str]:
+	def _normalize_model_name(provider: str | None, model: str | None) -> str | None:
 		if not model:
 			return model
 		if (provider or "").lower().strip() in {"google", "gemini"} and not model.startswith("models/"):
 			return f"models/{model}"
 		return model
 
-	def _read_label_candidates(self) -> List[str]:
+	def _read_label_candidates(self) -> list[str]:
 		raw = read_env("LABEL_CANDIDATES", "")
 		if not raw:
 			return []
@@ -66,7 +65,7 @@ class AppConfig:
 			val = 2
 		return max(1, min(val, 5))
 
-	def _read_jira_projects(self) -> List[str]:
+	def _read_jira_projects(self) -> list[str]:
 		raw = read_env("JIRA_PROJECT_KEYS", "")
 		if not raw:
 			return ["KZKP"]

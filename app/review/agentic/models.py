@@ -1,13 +1,12 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 
 
 @dataclass
 class ProjectContext:
 	name: str = "Default Project"
 	description: str = ""
-	tech_stack: List[str] = field(default_factory=list)
-	architecture: List[str] = field(default_factory=list)
+	tech_stack: list[str] = field(default_factory=list)
+	architecture: list[str] = field(default_factory=list)
 	testing_standards: str = ""
 	coding_guidelines: str = ""
 
@@ -17,14 +16,14 @@ class AgentPayload:
 	title: str
 	description: str
 	diff_text: str
-	changed_files: List[Tuple[str, str]]
-	commit_messages: List[str]
+	changed_files: list[tuple[str, str]]
+	commit_messages: list[str]
 	project_context: ProjectContext
 
 	def files_blob(self, max_files: int = 8, max_chars_per_file: int = 1500) -> str:
 		if not self.changed_files:
 			return ""
-		lines: List[str] = []
+		lines: list[str] = []
 		for path, content in self.changed_files[:max_files]:
 			snippet = content[:max_chars_per_file]
 			lines.append(f"File: {path}\n{snippet}")
@@ -40,9 +39,9 @@ class AgentPayload:
 	def files_with_line_numbers(self, max_files: int = 6, max_lines: int = 400) -> str:
 		if not self.changed_files:
 			return ""
-		blocks: List[str] = []
+		blocks: list[str] = []
 		for path, content in self.changed_files[:max_files]:
-			lines: List[str] = []
+			lines: list[str] = []
 			for idx, line in enumerate(content.splitlines(), start=1):
 				lines.append(f"{idx:04d}: {line}")
 				if idx >= max_lines:
@@ -64,8 +63,8 @@ class AgentResult:
 	key: str
 	content: str = ""
 	success: bool = True
-	error: Optional[str] = None
-	findings: List[AgentFinding] = field(default_factory=list)
+	error: str | None = None
+	findings: list[AgentFinding] = field(default_factory=list)
 
 
 

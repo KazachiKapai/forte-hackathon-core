@@ -1,7 +1,7 @@
 import json
-from typing import Dict, List, Optional
-from ..config.logging_config import configure_logging
 import time
+
+from ..config.logging_config import configure_logging
 
 try:
 	from jira import JIRA  # type: ignore
@@ -12,7 +12,7 @@ _LOGGER = configure_logging()
 
 
 class JiraService:
-	def __init__(self, base_url: str, email: str, api_token: str, project_keys: Optional[List[str]] = None, max_issues: int = 5) -> None:
+	def __init__(self, base_url: str, email: str, api_token: str, project_keys: list[str] | None = None, max_issues: int = 5, search_window: str = "-30d") -> None:
 		if JIRA is None:
 			raise RuntimeError("jira package is not installed; install `jira` to enable Jira integration")
 		self.base_url = base_url.rstrip("/")
@@ -20,6 +20,7 @@ class JiraService:
 		self.api_token = api_token
 		self.project_keys = project_keys or []
 		self.max_issues = max(1, max_issues)
+		self.search_window = search_window or "-30d"
 		# Initialize official Jira client
 		try:
 			self.client = JIRA(server=self.base_url, basic_auth=(self.email, self.api_token), options={"rest_api_version": "3"})
@@ -27,14 +28,14 @@ class JiraService:
 			_LOGGER.exception("Failed to initialize Jira client")
 			raise
 
-	def _post_json(self, path: str, body: Dict) -> Dict:
+	def _post_json(self, path: str, body: dict) -> dict:
 		url = f"{self.base_url}{path}"
 		resp = self.client._session.post(url, data=json.dumps(body), headers={"Content-Type": "application/json", "Accept": "application/json"})
 		if resp.status_code >= 400:
 			raise RuntimeError(f"HTTP {resp.status_code} {resp.reason}: {resp.text}")
 		return resp.json()
 
-	def _get_json(self, path: str, params: Optional[Dict] = None) -> Dict:
+	def _get_json(self, path: str, params: dict | None = None) -> dict:
 		url = f"{self.base_url}{path}"
 		resp = self.client._session.get(url, params=params, headers={"Accept": "application/json"})
 		if resp.status_code >= 400:
@@ -45,56 +46,67 @@ class JiraService:
 		self,
 		title: str,
 		description: str,
-		labels: List[str],
-		created_at_iso: Optional[str],
+		labels: list[str],
+		created_at_iso: str | None,
 		search_window: str = "-30d",
-		mr_url: Optional[str] = None,
-	) -> List[Dict[str, str]]:
+		mr_url: str | None = None,
+	) -> list[dict[str, str]]:
 		def _esc(s: str) -> str:
 			return s.replace("\\", "\\\\").replace('"', '\\"')
-		# Build multiple focused JQLs with OR-combined tokens to improve recall
-		queries: List[Dict[str, str]] = []
-		prefix = f'project in ({",".join(self.project_keys)})' if self.project_keys else ""
-		# Tokenize title/description words and keep top N
-		title_tokens = [w for w in (title or "").split() if len(w) >= 3][:6]
-		desc_tokens = [w for w in (description or "").split() if len(w) >= 5][:6]
-		if title_tokens:
-			s_or = " OR ".join([f'summary ~ "{_esc(t)}"' for t in title_tokens])
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}({s_or})'})
-			d_or = " OR ".join([f'description ~ "{_esc(t)}"' for t in title_tokens])
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}({d_or})'})
-		if desc_tokens:
-			d2_or = " OR ".join([f'description ~ "{_esc(t)}"' for t in desc_tokens])
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}({d2_or})'})
-		# Labels OR
-		if labels:
-			lbls = ",".join([f'"{_esc(l)}"' for l in labels[:5]])
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}(labels in ({lbls}))'})
-		# MR URL exact match in description (high precision)
+		def _tokens(text: str, min_len: int, limit: int) -> list[str]:
+			if not text:
+				return []
+			import re as _re
+			words = _re.findall(r"[A-Za-z0-9_]+", text.lower())
+			stop = {"the","and","for","with","from","that","this","which","into","over","under","your","their","our","are","was","were","have","has","had","you","him","her","its","they","them","can","could","should","would","about","after","before","into","onto"}
+			out: list[str] = []
+			seen = set()
+			for w in words:
+				if len(w) < min_len or w in stop or w in seen:
+					continue
+				seen.add(w)
+				out.append(w)
+				if len(out) >= limit:
+					break
+			return out
+		def _base_clauses() -> list[str]:
+			cs: list[str] = []
+			if self.project_keys:
+				# Project keys are identifiers; quoting typically not required
+				cs.append(f'project in ({",".join(self.project_keys)})')
+			# When caller doesn't pass a window, use service default
+			win = search_window or self.search_window
+			if win:
+				cs.append(f"updated >= {win}")
+			if created_at_iso:
+				date_only = created_at_iso.split("T")[0]
+				cs.append(f'created >= "{_esc(date_only)}"')
+			return cs
+		# Build targeted queries: URL, text tokens, labels
+		queries: list[str] = []
+		base = " AND ".join(_base_clauses())
 		if mr_url:
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}(description ~ "{_esc(mr_url)}")'})
-		# Time-based narrowing: created_at_iso (as date-only) and updated >= search_window
-		if created_at_iso:
-			# Convert ISO to date-only to avoid time format issues in JQL
-			date_only = created_at_iso.split("T")[0]
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}created >= "{_esc(date_only)}"'})
-		if search_window:
-			queries.append({"jql": f'{prefix + " AND " if prefix else ""}updated >= {search_window}'})
-		# Fallback generic
+			queries.append(f'{base + " AND " if base else ""}(description ~ "{_esc(mr_url)}") ORDER BY updated DESC')
+		title_tokens = _tokens(title or "", 3, 6)
+		desc_tokens = _tokens(description or "", 5, 6)
+		text_tokens = title_tokens + [t for t in desc_tokens if t not in set(title_tokens)]
+		if text_tokens:
+			token_or = " OR ".join([f'text ~ "{_esc(t)}"' for t in text_tokens])
+			queries.append(f'{base + " AND " if base else ""}({token_or}) ORDER BY updated DESC')
+		if labels:
+			lbls = ",".join([f'"{_esc(label)}"' for label in labels[:5]])
+			queries.append(f'{base + " AND " if base else ""}(labels in ({lbls})) ORDER BY updated DESC')
 		if not queries:
-			queries.append({"jql": prefix or "ORDER BY updated DESC"})
+			queries.append(base + " ORDER BY updated DESC" if base else "ORDER BY updated DESC")
 		_LOGGER.info("Jira search queries_count=%s maxResults=%s", len(queries), self.max_issues)
-		all_issues: Dict[str, Dict] = {}
-		for idx, q in enumerate(queries):
-			jql = q.get("jql", "")
-			if not jql:
-				continue
+		all_issues: dict[str, dict] = {}
+		for idx, jql in enumerate(queries):
 			ok = False
 			data = {}
 			for attempt in range(2):
 				try:
 					# New API via official client's session: POST /rest/api/3/search/jql
-					body_jql: Dict = {
+					body_jql: dict = {
 						"jql": jql,
 						"maxResults": self.max_issues,
 						# Request fields explicitly; API may still return IDs only
@@ -149,7 +161,7 @@ class JiraService:
 								bulk_items = bulk.get("issues") or []
 							elif "results" in bulk and isinstance(bulk.get("results"), list):
 								bulk_items = bulk.get("results") or []
-							by_key: Dict[str, Dict] = {}
+							by_key: dict[str, dict] = {}
 							for bi in bulk_items:
 								k = bi.get("key") or bi.get("id")
 								if k:
@@ -174,7 +186,7 @@ class JiraService:
 			if len(all_issues) >= self.max_issues:
 				break
 		raw_list = list(all_issues.values())[: self.max_issues]
-		issues_out: List[Dict[str, str]] = []
+		issues_out: list[dict[str, str]] = []
 		for it in raw_list:
 			key = it.get("key")
 			fields = it.get("fields") or {}
@@ -196,7 +208,7 @@ class JiraService:
 		)
 		return issues_out
 	
-	def add_remote_link(self, issue_key: str, url: str, title: Optional[str] = None) -> None:
+	def add_remote_link(self, issue_key: str, url: str, title: str | None = None) -> None:
 		"""
 		Create a remote link from Jira issue to an external resource (e.g., GitLab MR).
 		"""
@@ -213,10 +225,10 @@ class JiraService:
 		project_key: str,
 		summary: str,
 		description: str,
-		labels: Optional[List[str]] = None,
+		labels: list[str] | None = None,
 		issue_type: str = "Task",
-	) -> Optional[Dict[str, str]]:
-		def _to_adf(text: str) -> Dict:
+	) -> dict[str, str] | None:
+		def _to_adf(text: str) -> dict:
 			paras = [p for p in (text or "").split("\n\n") if p.strip()]
 			content = []
 			for p in paras:
@@ -255,7 +267,7 @@ class JiraService:
 			if labels:
 				fields["labels"] = labels[:10]
 			issue = self.client.create_issue(fields=fields)
-		except Exception as e:
+		except Exception:
 			_LOGGER.exception("Jira create_issue exception")
 			raise
 		key = getattr(issue, "key", None)
@@ -263,13 +275,13 @@ class JiraService:
 			return None
 		return {"key": key, "url": f"{self.base_url}/browse/{key}"}
 
-	def list_projects(self, max_results: int = 200) -> List[Dict[str, str]]:
+	def list_projects(self, max_results: int = 200) -> list[dict[str, str]]:
 		try:
 			projects = self.client.projects()
 		except Exception:
 			_LOGGER.exception("Jira list_projects exception")
 			return []
-		out: List[Dict[str, str]] = []
+		out: list[dict[str, str]] = []
 		for prj in projects or []:
 			try:
 				out.append({"key": getattr(prj, "key", "") or "", "name": getattr(prj, "name", "") or ""})

@@ -1,14 +1,16 @@
-from typing import Any, Dict, List, Optional, Tuple
 import datetime
-import uuid
-import gitlab
 import os
+import uuid
+from typing import Any
+
+import gitlab
+
 from ..storage.json_store import load_json, save_json
 
 GITLAB_URL = os.environ.get("GITLAB_URL", "https://gitlab.com")
 
 
-def validate_token_with_gitlab(token: str) -> Tuple[bool, Optional[int]]:
+def validate_token_with_gitlab(token: str) -> tuple[bool, int | None]:
 	try:
 		gl = gitlab.Gitlab(GITLAB_URL, private_token=token)
 		gl.auth()
@@ -25,10 +27,10 @@ def validate_token_with_gitlab(token: str) -> Tuple[bool, Optional[int]]:
 
 
 def add_user_token(user_id: str, token: str, name: str) -> str:
-	tokens: Dict[str, List[Dict[str, Any]]] = load_json("tokens.json", {})
+	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	user_tokens = tokens.get(user_id) or []
 	token_id = f"token_{uuid.uuid4().hex[:8]}"
-	now_iso = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+	now_iso = datetime.datetime.now(datetime.UTC).isoformat()
 	user_tokens.append(
 		{
 			"id": token_id,
@@ -45,13 +47,13 @@ def add_user_token(user_id: str, token: str, name: str) -> str:
 	return token_id
 
 
-def list_user_tokens(user_id: str) -> List[Dict[str, Any]]:
-	tokens: Dict[str, List[Dict[str, Any]]] = load_json("tokens.json", {})
+def list_user_tokens(user_id: str) -> list[dict[str, Any]]:
+	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	return tokens.get(user_id) or []
 
 
 def delete_user_token(user_id: str, token_id: str) -> None:
-	tokens: Dict[str, List[Dict[str, Any]]] = load_json("tokens.json", {})
+	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	user_tokens = tokens.get(user_id) or []
 	new_list = [t for t in user_tokens if t.get("id") != token_id]
 	tokens[user_id] = new_list

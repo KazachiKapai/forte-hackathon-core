@@ -1,13 +1,13 @@
-from typing import Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from ..base import InlineFinding, ReviewComment, ReviewGenerator, ReviewOutput
 from ...config.logging_config import configure_logging
+from ..base import InlineFinding, ReviewComment, ReviewGenerator, ReviewOutput
 from .agents import (
-	CodeSummaryAgent,
-	DiagramAgent,
-	NamingQualityAgent,
-	TaskContextAgent,
-	TestCoverageAgent,
+    CodeSummaryAgent,
+    DiagramAgent,
+    NamingQualityAgent,
+    TaskContextAgent,
+    TestCoverageAgent,
 )
 from .context_loader import load_project_context
 from .llm import build_llm_client
@@ -26,10 +26,12 @@ class AgenticReviewGenerator(ReviewGenerator):
 		project_context_path: str,
 		timeout: float = 60.0,
 		max_retries: int = 2,
+		max_concurrency: int = 4,
 	) -> None:
 		self.project_context_path = project_context_path
 		self.max_retries = max(0, max_retries)
 		self.client = build_llm_client(provider, model, openai_api_key, google_api_key, timeout)
+		self.max_concurrency = max(1, int(max_concurrency))
 		self.agents = [
 			TaskContextAgent(),
 			CodeSummaryAgent(),
@@ -43,8 +45,8 @@ class AgenticReviewGenerator(ReviewGenerator):
 		title: str,
 		description: str,
 		diff_text: str,
-		changed_files: List[Tuple[str, str]],
-		commit_messages: List[str],
+		changed_files: list[tuple[str, str]],
+		commit_messages: list[str],
 	) -> ReviewOutput:
 		context = load_project_context(self.project_context_path)
 		payload = AgentPayload(
@@ -55,13 +57,27 @@ class AgenticReviewGenerator(ReviewGenerator):
 			commit_messages=commit_messages,
 			project_context=context,
 		)
-		results: Dict[str, AgentResult] = {}
-		inline_findings: List[AgentFinding] = []
-		for agent in self.agents:
-			res = self._run_agent(agent, payload)
-			results[agent.key] = res
-			if res.findings:
-				inline_findings.extend(res.findings)
+		results: dict[str, AgentResult] = {}
+		inline_findings: list[AgentFinding] = []
+		if not self.agents:
+			return ReviewOutput(comments=[], inline_findings=[])
+		# Run agents in parallel with bounded concurrency
+		max_workers = min(self.max_concurrency, len(self.agents))
+		with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="agent-worker") as pool:
+			future_to_key = {pool.submit(self._run_agent, agent, payload): agent.key for agent in self.agents}
+			for fut in as_completed(future_to_key):
+				key = future_to_key[fut]
+				try:
+					res = fut.result()
+				except Exception as exc:
+					_LOGGER.warning("Agent future failed", extra={"agent": key, "error": str(exc)})
+					res = AgentResult(key=key, success=False, error=str(exc))
+				results[key] = res
+				if getattr(res, "findings", None):
+					inline_findings.extend(res.findings)
+		# Ensure deterministic ordering of inline findings across parallel agents
+		if inline_findings:
+			inline_findings.sort(key=lambda f: (getattr(f, "path", "") or "", getattr(f, "line", 0)))
 		comments = self._compose_comments(payload, results)
 		return ReviewOutput(
 			comments=comments,
@@ -83,12 +99,12 @@ class AgenticReviewGenerator(ReviewGenerator):
 				_LOGGER.warning("Agent execution failed", extra={"agent": agent.key, "error": last_error})
 		return AgentResult(key=agent.key, success=False, error=last_error or "Agent failed without error")
 
-	def _compose_comments(self, payload: AgentPayload, results: Dict[str, AgentResult]) -> List[ReviewComment]:
+	def _compose_comments(self, payload: AgentPayload, results: dict[str, AgentResult]) -> list[ReviewComment]:
 		if not results:
 			return []
 		if not any(r.success for r in results.values()):
 			return [ReviewComment(title="Agentic Reviewer", body=self._fallback_body(payload, results))]
-		comments: List[ReviewComment] = []
+		comments: list[ReviewComment] = []
 		summary = self._build_summary_comment(results)
 		if summary:
 			comments.append(summary)
@@ -103,7 +119,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 			comments.append(tests)
 		return comments or [ReviewComment(title="Agentic Reviewer", body=self._fallback_body(payload, results))]
 
-	def _build_summary_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
+	def _build_summary_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
 		task = results.get("task_context")
 		code = results.get("code_summary")
 		bullets = self._collect_bullets(task, code)
@@ -114,8 +130,8 @@ class AgenticReviewGenerator(ReviewGenerator):
 			return None
 		return ReviewComment(title="Task and Diff Summary", body=body)
 
-	def _collect_bullets(self, *results: Optional[AgentResult]) -> List[str]:
-		bullets: List[str] = []
+	def _collect_bullets(self, *results: AgentResult | None) -> list[str]:
+		bullets: list[str] = []
 		for result in results:
 			if not result or not result.content:
 				continue
@@ -128,7 +144,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 				bullets.append(strip)
 		return [b for b in bullets if b]
 
-	def _build_diagram_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
+	def _build_diagram_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
 		item = results.get("architecture_diagram")
 		if not item:
 			return None
@@ -137,7 +153,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 			return None
 		return ReviewComment(title="Architecture Diagram", body=body)
 
-	def _build_naming_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
+	def _build_naming_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
 		item = results.get("naming_quality")
 		if not item:
 			return None
@@ -146,7 +162,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 			return None
 		return ReviewComment(title="Naming and Documentation", body=body)
 
-	def _build_test_comment(self, results: Dict[str, AgentResult]) -> Optional[ReviewComment]:
+	def _build_test_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
 		item = results.get("test_coverage")
 		if not item:
 			return None
@@ -155,7 +171,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 			return None
 		return ReviewComment(title="Test Coverage Review", body=body)
 
-	def _render_section(self, label: str, result: Optional[AgentResult]) -> str:
+	def _render_section(self, label: str, result: AgentResult | None) -> str:
 		if not result:
 			return ""
 		if result.success and result.content:
@@ -163,7 +179,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 		error = result.error or "No output produced."
 		return f"**{label}**\nAgent error: {error}"
 
-	def _fallback_body(self, payload: AgentPayload, results: Dict[str, AgentResult]) -> str:
+	def _fallback_body(self, payload: AgentPayload, results: dict[str, AgentResult]) -> str:
 		reason = next((r.error for r in results.values() if r.error), "agent pipeline unavailable")
 		diff_preview = (payload.diff_text or "")[:2000]
 		return (

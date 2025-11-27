@@ -1,5 +1,4 @@
-from urllib.parse import urlparse, parse_qs
-from typing import Dict, Any, List
+from urllib.parse import parse_qs, urlparse
 
 
 def _login_and_get_cookies(client, monkeypatch):
@@ -15,8 +14,9 @@ def _login_and_get_cookies(client, monkeypatch):
 def test_repos_list_empty_then_sync(app_client, monkeypatch):
 	client, _ = app_client
 	cookies = _login_and_get_cookies(client, monkeypatch)
+	client.cookies.update(cookies)
 	# Initially empty
-	r0 = client.get("/api/repositories", cookies=cookies)
+	r0 = client.get("/api/repositories")
 	assert r0.status_code == 200
 	assert r0.json()["pagination"]["total"] == 0
 	# Monkeypatch sync to populate repos
@@ -28,15 +28,15 @@ def test_repos_list_empty_then_sync(app_client, monkeypatch):
 		])
 		return 2
 	monkeypatch.setattr(repos_service, "sync_repositories", lambda user_id: fake_sync(user_id))
-	r_sync = client.post("/api/repositories/sync", cookies=cookies)
+	r_sync = client.post("/api/repositories/sync")
 	assert r_sync.status_code == 200
 	assert r_sync.json()["synced"] == 2
 	# Now list returns two
-	r1 = client.get("/api/repositories", cookies=cookies)
+	r1 = client.get("/api/repositories")
 	assert r1.status_code == 200
 	assert r1.json()["pagination"]["total"] == 2
 	# Search filter
-	r2 = client.get("/api/repositories?search=b", cookies=cookies)
+	r2 = client.get("/api/repositories?search=b")
 	assert r2.json()["pagination"]["total"] == 1
 
 

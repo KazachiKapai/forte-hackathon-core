@@ -1,5 +1,7 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request, Response
+
 from ..config.logging_config import configure_logging
 from ..security.session import require_auth
 from ..storage.json_store import load_json, save_json
@@ -10,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/api/onboarding/status")
-async def onboarding_status(request: Request) -> Dict[str, Any]:
+async def onboarding_status(request: Request) -> dict[str, Any]:
 	sess = require_auth(request)
 	user_id = sess["user"]["id"]
 	user_tokens = token_service.list_user_tokens(user_id)
@@ -22,7 +24,7 @@ async def onboarding_status(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/api/onboarding/token")
-async def add_token(request: Request) -> Dict[str, Any]:
+async def add_token(request: Request) -> dict[str, Any]:
 	sess = require_auth(request)
 	user_id = sess["user"]["id"]
 	body = await request.json()
@@ -35,7 +37,7 @@ async def add_token(request: Request) -> Dict[str, Any]:
 		raise HTTPException(status_code=400, detail="Token validation failed with GitLab")
 	token_id = token_service.add_user_token(user_id, token, name)
 	# patch project_id if known
-	tokens: Dict[str, List[Dict[str, Any]]] = load_json("tokens.json", {})
+	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	for t in tokens.get(user_id, []):
 		if t.get("id") == token_id:
 			t["project_id"] = proj_id
@@ -44,7 +46,7 @@ async def add_token(request: Request) -> Dict[str, Any]:
 
 
 @router.get("/api/tokens")
-async def list_tokens(request: Request) -> Dict[str, Any]:
+async def list_tokens(request: Request) -> dict[str, Any]:
 	sess = require_auth(request)
 	user_id = sess["user"]["id"]
 	user_tokens = token_service.list_user_tokens(user_id)

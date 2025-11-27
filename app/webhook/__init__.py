@@ -1,3 +1,3 @@
-from .processor import WebhookProcessor
+from .processor import WebhookProcessor as WebhookProcessor
 
 

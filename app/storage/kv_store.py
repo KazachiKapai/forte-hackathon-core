@@ -1,9 +1,10 @@
 import json
 import os
-from typing import Any
 from pathlib import Path
-from .base import KeyValueStore
+from typing import Any
+
 from ..config.logging_config import configure_logging
+from .base import KeyValueStore
 
 _LOGGER = configure_logging()
 
@@ -19,7 +20,7 @@ class FileKeyValueStore(KeyValueStore):
 	def get_json(self, name: str, default: Any) -> Any:
 		path = self._file_path(name)
 		try:
-			with open(path, "r", encoding="utf-8") as f:
+			with open(path, encoding="utf-8") as f:
 				return json.load(f)
 		except Exception:
 			return default
@@ -36,7 +37,6 @@ class MongoKeyValueStore(KeyValueStore):
 	def __init__(self, mongo_url: str, database: str = "app") -> None:
 		try:
 			from pymongo import MongoClient  # type: ignore
-			from pymongo.collection import Collection  # type: ignore
 		except Exception as e:
 			raise RuntimeError("pymongo is required for MongoKeyValueStore") from e
 		self._MongoClient = MongoClient  # type: ignore[assignment]

@@ -1,22 +1,22 @@
-from typing import Dict, Optional, List
-from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from collections import deque
 import os
 import re
 import urllib.parse
+from collections import deque
 
-from ..webhook import WebhookProcessor
-from ..infra.task_executor import get_shared_executor
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from ..auth import router as auth_router
+from ..config.logging_config import configure_logging
+from ..infra.cooldown import get_cooldown_store
 from ..infra.dedupe import get_dedupe_store
 from ..infra.ipfilter import get_effective_allowlist, is_ip_allowed
 from ..infra.ratelimit import get_rate_limiter
-from ..infra.cooldown import get_cooldown_store
-from ..config.logging_config import configure_logging
-from ..auth import router as auth_router
-from ..tokens import router as tokens_router
+from ..infra.task_executor import get_shared_executor
 from ..repos import router as repos_router
+from ..tokens import router as tokens_router
+from ..webhook import WebhookProcessor
 
 _LOGGER = configure_logging()
 
@@ -39,7 +39,7 @@ def _normalize_origin(url: str) -> str:
 	return url.rstrip("/")
 
 
-def _get_frontend_origins() -> List[str]:
+def _get_frontend_origins() -> list[str]:
 	raw = os.environ.get("FRONTEND_URL", "http://localhost:3000") or "http://localhost:3000"
 	# Support comma-separated list
 	parts = [p.strip() for p in raw.split(",") if p.strip()]
@@ -48,7 +48,7 @@ def _get_frontend_origins() -> List[str]:
 	origins = [_normalize_origin(p) for p in parts]
 	# Deduplicate while preserving order
 	seen = set()
-	out: List[str] = []
+	out: list[str] = []
 	for o in origins:
 		if o not in seen:
 			seen.add(o)
@@ -59,7 +59,7 @@ def _get_frontend_origins() -> List[str]:
 _FRONTEND_ORIGINS = _get_frontend_origins()
 
 
-def _record_event_uuid(event_uuid: Optional[str]) -> bool:
+def _record_event_uuid(event_uuid: str | None) -> bool:
 	if not event_uuid:
 		return False
 	dup = event_uuid in _seen_event_set
@@ -70,6 +70,60 @@ def _record_event_uuid(event_uuid: Optional[str]) -> bool:
 			_seen_event_set.clear()
 			_seen_event_set.update(_seen_event_ids)
 	return dup
+
+
+def _determine_client_ip(request: Request, trust_proxy: bool) -> str | None:
+	client_ip = getattr(request.client, "host", None)
+	if not trust_proxy:
+		return client_ip
+	fwd = request.headers.get("X-Forwarded-For")
+	if not fwd:
+		return client_ip
+	first = fwd.split(",")[0].strip()
+	if re.match(r"^[0-9a-fA-F\.:]+$", first):
+		return first
+	return client_ip
+
+
+def _enforce_ip_policies(client_ip: str | None) -> None:
+	allowlist = get_effective_allowlist()
+	if allowlist and not is_ip_allowed(client_ip, allowlist):
+		_LOGGER.warning("IP not allowed", extra={"client_ip": client_ip})
+		raise HTTPException(status_code=403, detail="Forbidden")
+	rl = get_rate_limiter()
+	if client_ip and not rl.allow(client_ip):
+		_LOGGER.warning("Rate limit exceeded", extra={"client_ip": client_ip})
+		raise HTTPException(status_code=429, detail="Too Many Requests")
+
+
+def _validate_webhook_headers(processor: WebhookProcessor, x_gitlab_event: str | None, x_gitlab_token: str | None) -> None:
+	try:
+		processor.validate_secret(x_gitlab_token)
+	except PermissionError:
+		raise HTTPException(status_code=401, detail="Invalid webhook token")
+	if x_gitlab_event != "Merge Request Hook":
+		# non-MR events are explicitly ignored
+		raise HTTPException(status_code=202, detail="ignored")
+
+
+def _extract_mr_identifiers(payload: dict[str, any]) -> tuple[int, int, str, str, str | None, str | None]:
+	attrs = payload.get("object_attributes", {}) or {}
+	project_info = payload.get("project", {}) or {}
+	project_id = int(project_info.get("id"))
+	mr_iid = int(attrs.get("iid"))
+	action = attrs.get("action") or ""
+	updated_at = attrs.get("updated_at") or ""
+	last_commit = (attrs.get("last_commit") or {}).get("id") if isinstance(attrs.get("last_commit"), dict) else None
+	title = attrs.get("title") or ""
+	description = attrs.get("description") or ""
+	return project_id, mr_iid, action, updated_at, last_commit, title or description
+
+
+def _compute_idempotency_key(attrs: dict[str, any], project_id: int, mr_iid: int, event_uuid: str | None) -> str:
+	commit_sha = (attrs.get("last_commit") or {}).get("id") if isinstance(attrs.get("last_commit"), dict) else None
+	updated_at = attrs.get("updated_at") or ""
+	action = attrs.get("action") or ""
+	return event_uuid or f"{project_id}:{mr_iid}:{commit_sha or updated_at}:{action}"
 
 
 def create_app(processor: WebhookProcessor) -> FastAPI:
@@ -83,7 +137,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 	)
 
 	@app.get("/health")
-	async def health() -> Dict[str, str]:
+	async def health() -> dict[str, str]:
 		return {"status": "ok"}
 
 	# Mount feature routers
@@ -95,37 +149,20 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 	async def gitlab_webhook(
 		request: Request,
 		background_tasks: BackgroundTasks,
-		x_gitlab_event: Optional[str] = Header(default=None, alias="X-Gitlab-Event"),
-		x_gitlab_token: Optional[str] = Header(default=None, alias="X-Gitlab-Token"),
-		x_gitlab_event_uuid: Optional[str] = Header(default=None, alias="X-Gitlab-Event-UUID"),
+		x_gitlab_event: str | None = Header(default=None, alias="X-Gitlab-Event"),
+		x_gitlab_token: str | None = Header(default=None, alias="X-Gitlab-Token"),
+		x_gitlab_event_uuid: str | None = Header(default=None, alias="X-Gitlab-Event-UUID"),
 	) -> JSONResponse:
-		# Determine client IP (optionally trusting proxy headers)
 		trust_proxy = (os.environ.get("TRUST_PROXY", "false") or "false").lower() in {"1", "true", "yes"}
-		client_ip = getattr(request.client, "host", None)
-		if trust_proxy:
-			fwd = request.headers.get("X-Forwarded-For")
-			if fwd:
-				# Take the left-most IP
-				first = fwd.split(",")[0].strip()
-				# Basic sanity check for IPv4/IPv6 literal
-				if re.match(r"^[0-9a-fA-F\.:]+$", first):
-					client_ip = first
-		# IP allowlist check (if configured)
-		allowlist = get_effective_allowlist()
-		if allowlist and not is_ip_allowed(client_ip, allowlist):
-			_LOGGER.warning("IP not allowed", extra={"client_ip": client_ip})
-			raise HTTPException(status_code=403, detail="Forbidden")
-		# Rate limiting per IP
-		rl = get_rate_limiter()
-		if client_ip and not rl.allow(client_ip):
-			_LOGGER.warning("Rate limit exceeded", extra={"client_ip": client_ip})
-			raise HTTPException(status_code=429, detail="Too Many Requests")
+		client_ip = _determine_client_ip(request, trust_proxy)
+		_enforce_ip_policies(client_ip)
 		try:
-			processor.validate_secret(x_gitlab_token)
-		except PermissionError:
-			raise HTTPException(status_code=401, detail="Invalid webhook token")
-		if x_gitlab_event != "Merge Request Hook":
-			return JSONResponse({"status": "ignored", "reason": "unsupported_event"}, status_code=202)
+			_validate_webhook_headers(processor, x_gitlab_event, x_gitlab_token)
+		except HTTPException as e:
+			# 202 with "ignored" should return body per previous behavior
+			if e.status_code == 202:
+				return JSONResponse({"status": "ignored", "reason": "unsupported_event"}, status_code=202)
+			raise
 
 		payload = await request.json()
 		attrs = payload.get("object_attributes", {}) or {}
@@ -171,10 +208,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 			)
 			return JSONResponse({"status": "cooldown_skipped"}, status_code=202)
 		# Build idempotency key when Event-UUID not present
-		commit_sha = (attrs.get("last_commit") or {}).get("id") if isinstance(attrs.get("last_commit"), dict) else None
-		updated_at = attrs.get("updated_at") or ""
-		action = attrs.get("action") or ""
-		idempotency_key = x_gitlab_event_uuid or f"{project_id}:{mr_iid}:{commit_sha or updated_at}:{action}"
+		idempotency_key = _compute_idempotency_key(attrs, project_id, mr_iid, x_gitlab_event_uuid)
 		dedupe = get_dedupe_store()
 		if not dedupe.should_process(idempotency_key):
 			_LOGGER.info(

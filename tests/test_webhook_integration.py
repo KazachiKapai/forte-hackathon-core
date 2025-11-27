@@ -1,7 +1,3 @@
-import json
-from typing import List
-
-
 def test_webhook_ignored_when_wrong_event(app_client):
 	client, _ = app_client
 	r = client.post(
@@ -103,7 +99,7 @@ def test_webhook_processor_posts_inline_findings():
 		def get_latest_mr_version_id(self, project, mr_iid: int) -> str:
 			return "1"
 
-		def update_mr_labels(self, project, mr_iid: int, add_labels: List[str]) -> None:
+		def update_mr_labels(self, project, mr_iid: int, add_labels: list[str]) -> None:
 			self.labels.extend(add_labels)
 
 		def ensure_webhook_for_project(self, project, webhook_url: str, secret_token: str):

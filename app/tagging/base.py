@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
 
 
 class TagClassifier(ABC):
@@ -9,10 +8,10 @@ class TagClassifier(ABC):
 		title: str,
 		description: str,
 		diff_text: str,
-		changed_files: List[Tuple[str, str]],
-		commit_messages: List[str],
-		candidates: List[str],
-	) -> List[str]:
+		changed_files: list[tuple[str, str]],
+		commit_messages: list[str],
+		candidates: list[str],
+	) -> list[str]:
 		...
 
 

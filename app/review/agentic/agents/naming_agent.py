@@ -1,7 +1,8 @@
 import json
 import re
+
+from ..models import AgentFinding, AgentPayload, AgentResult
 from .base import BaseAgent
-from ..models import AgentPayload, AgentFinding, AgentResult
 
 
 class NamingQualityAgent(BaseAgent):
@@ -12,12 +13,14 @@ class NamingQualityAgent(BaseAgent):
 		files_blob = payload.files_with_line_numbers(max_files=8, max_lines=300)
 		return (
 			"You review naming, function signatures, and inline documentation.\n"
-			"Return STRICT JSON: {\"summary\": [<up to 3 short bullets>], "
+			"Follow STRICT rules and output exactly the specified JSON schema.\n"
+			"Return STRICT JSON: {\"summary\": [<up to 3 short bullets, <=14 words>], "
 			"\"findings\": [{\"path\": \"file.py\", \"line\": 12, \"comment\": \"one sentence\"}, ...] }.\n"
-			"- summary bullets must be concise statements for the overall comment body.\n"
-			"- findings array pinpoints specific issues; omit if nothing actionable. Lines are 1-indexed.\n"
-			"If everything is good, summary must be [\"Naming and docs look fine\"] and findings must be []. "
-			"No prose outside JSON.\n\n"
+			"- Use only information visible in snippets. Do not speculate.\n"
+			"- 'summary' supports the overall comment body; be specific and non-repetitive.\n"
+			"- 'findings' pinpoints actionable issues; omit if nothing precise. Lines are 1-indexed.\n"
+			"- If everything is fine, use summary [\"Naming and docs look fine\"] and findings [].\n"
+			"- No prose outside JSON.\n\n"
 			f"Coding Guidelines:\n{payload.project_context.coding_guidelines}\n\n"
 			f"Changed Files:\n{files_blob}\n"
 		)
@@ -43,12 +46,10 @@ class NamingQualityAgent(BaseAgent):
 				continue
 			if path and isinstance(path, str) and line_num > 0 and isinstance(comment, str) and comment.strip():
 				findings.append(AgentFinding(path=path, line=line_num, body=comment.strip(), source=self.key))
-		return AgentResult(
-			key=self.key,
-			content=content or "No naming/doc issues detected.",
-			success=True,
-			findings=findings,
-		)
+		# Suppress comment when nothing actionable
+		if not findings and (not summary_items or any("look fine" in s.lower() for s in summary_items)):
+			content = ""
+		return AgentResult(key=self.key, content=content, success=True, findings=findings)
 
 	def _strip_code_fence(self, text: str) -> str:
 		strip = text.strip()

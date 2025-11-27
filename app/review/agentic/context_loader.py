@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from .models import ProjectContext
 
@@ -11,7 +11,7 @@ def load_project_context(path: str) -> ProjectContext:
 		return ProjectContext()
 	try:
 		raw = context_path.read_text(encoding="utf-8")
-		data: Dict[str, Any] = json.loads(raw)
+		data: dict[str, Any] = json.loads(raw)
 	except Exception:
 		return ProjectContext()
 	return ProjectContext(

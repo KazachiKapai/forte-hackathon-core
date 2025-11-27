@@ -1,6 +1,5 @@
-from urllib.parse import urlparse, parse_qs
-from typing import Dict, Any, List
-import importlib
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 
 def test_health_ok(app_client):
@@ -24,7 +23,7 @@ def test_auth_login_redirects(app_client, monkeypatch):
 	# State should have been recorded
 	state = parse_qs(urlparse(loc).query)["state"][0]
 	from app.storage import json_store as js
-	states: Dict[str, Any] = js.load_json("oauth_state.json", {})
+	states: dict[str, Any] = js.load_json("oauth_state.json", {})
 	assert state in states
 
 
@@ -45,7 +44,8 @@ def test_auth_callback_sets_session_and_redirects(app_client, monkeypatch):
 	assert any(c.startswith("sid=") for c in r.headers.get("set-cookie", "").split(";"))
 	# /auth/me should work with returned cookie
 	cookies = r.cookies
-	r_me = client.get("/auth/me", cookies=cookies)
+	client.cookies.update(cookies)
+	r_me = client.get("/auth/me")
 	assert r_me.status_code == 200
 	body = r_me.json()
 	assert body["username"] == "jdoe"
@@ -62,10 +62,11 @@ def test_auth_logout_clears_session(app_client, monkeypatch):
 	r_cb = client.get(f"/auth/callback?code=abc&state={state}")
 	cookies = r_cb.cookies
 	# Logout
-	r_out = client.post("/auth/logout", cookies=cookies)
+	client.cookies.update(cookies)
+	r_out = client.post("/auth/logout")
 	assert r_out.status_code == 200
 	# Subsequent me is unauthorized
-	r_me = client.get("/auth/me", cookies=cookies)
+	r_me = client.get("/auth/me")
 	assert r_me.status_code == 401
 
 

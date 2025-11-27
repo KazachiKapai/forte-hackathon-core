@@ -1,0 +1,6 @@
+ruff>=0.6,<0.7
+isort>=5.13,<6
+pyupgrade>=3.17,<4
+codespell>=2.3,<3
+
+

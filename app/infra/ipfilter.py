@@ -1,14 +1,12 @@
-import os
 import ipaddress
-from typing import List, Optional
-import urllib.request
-import socket
+import os
 import re
+import urllib.request
 
 
-def _parse_allowlist(raw: str) -> List[ipaddress._BaseNetwork]:
+def _parse_allowlist(raw: str) -> list[ipaddress._BaseNetwork]:
 	items = [x.strip() for x in raw.split(",") if x.strip()]
-	cidrs: List[ipaddress._BaseNetwork] = []
+	cidrs: list[ipaddress._BaseNetwork] = []
 	for item in items:
 		try:
 			# Accept single IP by converting to /32 or /128
@@ -23,16 +21,16 @@ def _parse_allowlist(raw: str) -> List[ipaddress._BaseNetwork]:
 	return cidrs
 
 
-def get_ip_allowlist() -> List[ipaddress._BaseNetwork]:
+def get_ip_allowlist() -> list[ipaddress._BaseNetwork]:
 	raw = os.environ.get("IP_ALLOWLIST", "").strip()
 	if not raw:
 		return []
 	return _parse_allowlist(raw)
 
-_cached_my_ip: Optional[str] = None
+_cached_my_ip: str | None = None
 
 
-def _resolve_my_public_ip() -> Optional[str]:
+def _resolve_my_public_ip() -> str | None:
 	global _cached_my_ip
 	if _cached_my_ip:
 		return _cached_my_ip
@@ -62,7 +60,7 @@ def _resolve_my_public_ip() -> Optional[str]:
 	return None
 
 
-def get_effective_allowlist() -> List[ipaddress._BaseNetwork]:
+def get_effective_allowlist() -> list[ipaddress._BaseNetwork]:
 	"""
 	Merges static allowlist with current machine's public IP when AUTO_ALLOW_MY_IP=true.
 	"""
@@ -85,7 +83,7 @@ def get_effective_allowlist() -> List[ipaddress._BaseNetwork]:
 	return static
 
 
-def is_ip_allowed(ip_str: Optional[str], allowlist: List[ipaddress._BaseNetwork]) -> bool:
+def is_ip_allowed(ip_str: str | None, allowlist: list[ipaddress._BaseNetwork]) -> bool:
 	if not allowlist:
 		# No allowlist configured → allow all
 		return True
