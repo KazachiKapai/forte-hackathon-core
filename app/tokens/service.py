@@ -26,25 +26,28 @@ def validate_token_with_gitlab(token: str) -> tuple[bool, int | None]:
 		return False, None
 
 
-def add_user_token(user_id: str, token: str, name: str) -> str:
+def add_user_token(user_id: str, token: str, name: str) -> dict[str, Any]:
 	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	user_tokens = tokens.get(user_id) or []
-	token_id = f"token_{uuid.uuid4().hex[:8]}"
-	now_iso = datetime.datetime.now(datetime.UTC).isoformat()
-	user_tokens.append(
-		{
-			"id": token_id,
-			"name": name,
-			"project_id": None,
-			"scopes": ["api"],
-			"created_at": now_iso,
-			"last_used_at": None,
-			"token": token,
-		}
-	)
+	
+	# Use timezone-aware UTC timestamp
+	now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+	
+	new_token = {
+		"id": f"token_{uuid.uuid4().hex[:8]}",
+		"name": name,
+		"project_id": None,
+		"scopes": ["api"],
+		"created_at": now_iso,
+		"last_used_at": None,
+		"token": token,
+	}
+	
+	user_tokens.append(new_token)
 	tokens[user_id] = user_tokens
 	save_json("tokens.json", tokens)
-	return token_id
+	
+	return new_token
 
 
 def list_user_tokens(user_id: str) -> list[dict[str, Any]]:

@@ -11,7 +11,7 @@ _LOGGER = configure_logging()
 router = APIRouter()
 
 
-@router.get("/api/onboarding/status")
+@router.get("/onboarding/status")
 async def onboarding_status(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
@@ -22,28 +22,50 @@ async def onboarding_status(current_user: dict[str, Any] = Depends(get_current_u
 	}
 
 
-@router.post("/api/onboarding/token")
+@router.post("/onboarding/token")
 async def add_token(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
-	body = await request.json()
+	
+	# Parse JSON body with error handling
+	try:
+		body = await request.json()
+	except Exception as e:
+		_LOGGER.error(f"Failed to parse JSON body: {e}")
+		raise HTTPException(status_code=400, detail="Invalid JSON in request body")
+	
 	token = (body.get("token") or "").strip()
 	name = (body.get("name") or "").strip() or "Token"
+	
+	if not token:
+		raise HTTPException(status_code=400, detail="Token is required")
+	
 	if not token.startswith("glpat-"):
 		raise HTTPException(status_code=400, detail="Invalid token format")
+	
 	ok, proj_id = token_service.validate_token_with_gitlab(token)
 	if not ok:
 		raise HTTPException(status_code=400, detail="Token validation failed with GitLab")
-	token_id = token_service.add_user_token(user_id, token, name)
-	# patch project_id if known
+	
+	new_token = token_service.add_user_token(user_id, token, name)
+	new_token["project_id"] = proj_id
+	
+	# To avoid saving the token twice, we can update the project_id in the stored token
 	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
-	for t in tokens.get(user_id, []):
-		if t.get("id") == token_id:
+	user_tokens = tokens.get(user_id, [])
+	for t in user_tokens:
+		if t.get("id") == new_token["id"]:
 			t["project_id"] = proj_id
+			break
 	save_json("tokens.json", tokens)
-	return {"success": True, "message": "Token added successfully", "token_id": token_id}
+	
+	# For security, don't return the raw token in the response
+	token_response = new_token.copy()
+	token_response.pop("token", None)
+	
+	return {"success": True, "message": "Token added successfully", "token": token_response}
 
 
-@router.get("/api/tokens")
+@router.get("/tokens")
 async def list_tokens(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
@@ -62,7 +84,7 @@ async def list_tokens(current_user: dict[str, Any] = Depends(get_current_user)) 
 	return {"data": out}
 
 
-@router.delete("/api/tokens/{token_id}")
+@router.delete("/tokens/{token_id}")
 async def delete_token_route(token_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> Response:
 	user_id = current_user["user_id"]
 	token_service.delete_user_token(user_id, token_id)

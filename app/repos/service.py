@@ -1,11 +1,15 @@
 import os
+import logging
 from typing import Any
 
 import gitlab
+from fastapi import HTTPException
+from gitlab.exceptions import GitlabError
 
 from ..storage.json_store import load_json, save_json
 
 GITLAB_URL = os.environ.get("GITLAB_URL", "https://gitlab.com")
+_LOGGER = logging.getLogger(__name__)
 
 
 def load_repos(user_id: str) -> list[dict[str, Any]]:
@@ -48,10 +52,17 @@ def sync_repositories(user_id: str) -> int:
 						"description": getattr(p, "description", None),
 						"last_review_at": None,
 					}
-				except Exception:
+				except Exception as e:
+					_LOGGER.warning(f"Failed to process project {getattr(p, 'id', 'N/A')}: {e}")
 					continue
-		except Exception:
-			continue
+		except GitlabError as e:
+			_LOGGER.warning(f"GitLab API error for user {user_id} with token ID {t.get('id')}: {e}")
+			if e.response_code == 401:
+				continue
+			raise HTTPException(status_code=502, detail=f"GitLab API error: {e.error_message}")
+		except Exception as e:
+			_LOGGER.error(f"Unexpected error during GitLab sync for user {user_id}: {e}", exc_info=True)
+			raise HTTPException(status_code=500, detail="An internal error occurred during repository sync.")
 	repos = list(projects_map.values())
 	save_repos(user_id, repos)
 	return len(repos)

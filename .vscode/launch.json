@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: FastAPI",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "serve"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "env": {
+                "PORT": "8080",
+                "ENV": "dev"
+            }
+        }
+    ]
+}
