@@ -53,7 +53,8 @@ async def add_token(request: Request, current_user: dict[str, Any] = Depends(get
     new_token = token_service.add_user_token(user_id, token, name)
     new_token["project_id"] = proj_id
 
-    gl_service.ensure_webhook_for_project(proj_id, cfg.webhook_url, cfg.webhook_secret)
+    project = gl_service.get_project(proj_id)
+    gl_service.ensure_webhook_for_project(project, cfg.webhook_url, cfg.webhook_secret)
 
     # To avoid saving the token twice, we can update the project_id in the stored token
     tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
