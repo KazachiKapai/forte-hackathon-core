@@ -61,7 +61,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
         project_id = project_info["id"]
 
         if payload["object_kind"] == "note":
-            if attrs["type"] != "DiffNote" and attrs["author_id"] != processor.service.get_current_user_id():
+            if attrs["type"] != "DiffNote" and int(attrs["author_id"]) == processor.service.get_current_user_id():
                 return StatusResponse(status="ignored", code=400)
 
             mr = payload["merge_request"]

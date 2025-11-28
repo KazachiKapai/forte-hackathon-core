@@ -65,7 +65,7 @@ class WebhookProcessor:
         user_id = user_info["id"]
         project = self.service.get_project(project_id)
         bot_id = self.service.get_current_user_id()
-        if bot_id is not None and user_id is not None and int(user_id) == int(bot_id):
+        if int(user_id) == int(bot_id):
             return
         first_body = self.service.get_discussion_first_note_body(project, mr_iid, discussion_id)
         reply = self._generate_discussion_reply(first_body or "", note_body or "")
