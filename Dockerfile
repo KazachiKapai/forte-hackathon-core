@@ -20,4 +20,5 @@ COPY . /app
 
 EXPOSE 8080
 
-CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8080"]
+COPY entrypoint.sh /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
