@@ -52,5 +52,3 @@ def require_auth(request: Request) -> dict[str, Any]:
 	if not sess or "user" not in sess:
 		raise HTTPException(status_code=401, detail="Unauthorized")
 	return sess
-
-

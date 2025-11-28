@@ -60,5 +60,3 @@ class GitLabOAuthProvider(OAuthProvider):
 		with urllib.request.urlopen(req, timeout=15) as resp:
 			body = resp.read().decode("utf-8")
 			return __import__("json").loads(body)
-
-

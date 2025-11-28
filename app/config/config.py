@@ -41,6 +41,7 @@ class AppConfig:
 			self.agentic_timeout = float(timeout_raw or "60")
 		except Exception:
 			self.agentic_timeout = 60.0
+		self.clerk_secret_key = read_env("CLERK_SECRET_KEY", required=True)
 
 	@staticmethod
 	def _normalize_model_name(provider: str | None, model: str | None) -> str | None:
