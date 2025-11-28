@@ -1,206 +1,92 @@
-# forte-hackathon-core
+# Forte: A Synergistic Multi-Agent Framework for AI-Powered Code Reviews
 
-GitLab Merge Request webhook that triggers an automated GPT code review and posts results back to the MR.
+Forte is a cutting-edge, automated code review assistant that deploys a synergistic multi-agent framework powered by state-of-the-art Large Language Models (LLMs). By providing intelligent, context-aware feedback on GitLab Merge Requests, Forte streamlines development workflows, enhances code quality, and accelerates the delivery lifecycle.
 
-Important security note: do not hardcode tokens in code. Provide them via environment variables as described below.
+## Key Features
 
-## Setup
+- **Automated Review Cycle**: Seamlessly integrates into the CI/CD pipeline, triggering reviews on Merge Request creation and updates.
+- **Synergistic Multi-Agent System**: Forte utilizes a team of specialized AI agents that collaborate to perform a holistic analysis of your code. Each agent is an expert in a specific domain, ensuring comprehensive and high-quality feedback.
+- **Multi-LLM Support**: Agnostic to the underlying model provider, with out-of-the-box support for OpenAI (GPT) and Google (Gemini).
+- **Intelligent Auto-Tagging**: Leverages LLMs to analyze MR context and automatically apply relevant labels (e.g., `bug`, `security`, `refactor`).
+- **Enterprise Integration**: Connects with Jira to enrich the review context with relevant ticket information.
+- **Extensible by Design**: Built with a modular architecture that allows for easy addition of new features and agents. GitHub support is planned.
 
-1) Create or use a GitLab Personal Access Token (PAT) with scopes:
-- api
+## The Agentic Framework
 
-2) Configure an LLM provider for the agentic reviewer:
-- For OpenAI: set `OPENAI_API_KEY` and optionally `AGENTIC_MODEL` (default: `gpt-4o-mini`)
-- For Google Gemini: set `GOOGLE_API_KEY`, `AGENTIC_PROVIDER=google`, and an available model name
+Forte's intelligence is rooted in its extensible agentic architecture, located in `app/review/agentic/`. This framework allows for the parallel execution of specialized agents, each designed to analyze a unique facet of the code submission.
 
-3) Install dependencies:
+### Core Agents
+
+The system is composed of several key agents, each inheriting from a base agent class defined in `app/review/agentic/agents/base.py`:
+
+- **Task Context Agent (`task_agent.py`)**: This agent acts as the project manager, performing initial research on the Merge Request to understand its purpose and scope by analyzing the title, description, and commit history.
+- **Code Analysis Agent (`code_agent.py`)**: Conducts a deep dive into the source code changes, providing a concise summary of the modifications.
+- **Architecture Visualization Agent (`diagram_agent.py`)**: Generates system-level architecture diagrams in Mermaid format to visually represent the impact of the changes.
+- **Code Quality Agent (`naming_agent.py`)**: Enforces best practices by scrutinizing naming conventions, documentation, and overall code clarity.
+- **Test Coverage Agent (`test_agent.py`)**: Evaluates the thoroughness of testing and identifies potential gaps in test coverage.
+
+This modular design, centered around the `app/review/agentic/agents/` directory, allows for easy extension. New agents can be developed and integrated to introduce novel analysis capabilities, such as security vulnerability scanning or performance profiling.
+
+## Getting Started
+
+### 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Environment variables
+### 2. Configuration
 
-- `GITLAB_URL` (default: `https://gitlab.com`)
-- `GITLAB_TOKEN` (required) — your GitLab PAT
-- `GITLAB_WEBHOOK_SECRET` (required) — shared secret GitLab uses to sign webhook requests
-- `WEBHOOK_URL` (required for hook registration) — public URL for your webhook endpoint, e.g. `https://your.domain/gitlab/webhook`
-- `OPENAI_API_KEY` (optional) — used when `AGENTIC_PROVIDER=openai`
-- `GOOGLE_API_KEY` (optional) — used when `AGENTIC_PROVIDER=google` (falls back to `GEMINI_API_KEY`)
-- `AGENTIC_PROVIDER` (optional) — defaults to `google`
-- `AGENTIC_MODEL` (optional) — defaults to `models/gemini-2.5-flash`. Для Google SDK автоматически добавляется префикс `models/`, поэтому можно указывать либо короткое имя (`gemini-2.5-flash`), либо полное (`models/gemini-2.5-flash`).
-- `PROJECT_CONTEXT_PATH` (optional) — JSON file with project description (default: `app/review/agentic/context/project_context.json`)
-- `AGENTIC_TIMEOUT` (optional) — LLM timeout in seconds (default: `60`)
-- `GEMINI_API_KEY` (optional) — enables label classification via Gemini
-- `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro` for tagging
-- `GEMINI_API_KEY` (optional) — enables GPT review via Gemini
-- `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro`
-- `ENV` (optional) — `prod` or `dev`. In `dev`, Gemini is mocked:
-  - Review: returns deterministic structured JSON inside the note
-  - Tagging: heuristic selection from candidates without calling Gemini
-- `OPENAI_API_KEY` (optional) — used when `AGENTIC_PROVIDER=openai`
-- `GOOGLE_API_KEY` (optional) — used when `AGENTIC_PROVIDER=google` (falls back to `GEMINI_API_KEY`)
-- `AGENTIC_PROVIDER` (optional) — defaults to `google`
-- `AGENTIC_MODEL` (optional) — defaults to `models/gemini-2.5-flash`. Для Google SDK автоматически добавляется префикс `models/`, поэтому можно указывать либо короткое имя (`gemini-2.5-flash`), либо полное (`models/gemini-2.5-flash`).
-- `PROJECT_CONTEXT_PATH` (optional) — JSON file with project description (default: `app/review/agentic/context/project_context.json`)
-- `AGENTIC_TIMEOUT` (optional) — LLM timeout in seconds (default: `60`)
-- `GEMINI_API_KEY` (optional) — enables label classification via Gemini
-- `GEMINI_MODEL` (optional) — defaults to `gemini-2.5-pro` for tagging
-- `LABEL_CANDIDATES` (optional) — comma-separated list of labels to auto-apply via Gemini, e.g. `bug,security,perf,refactor,docs`
-- `LABEL_MAX` (optional) — maximum labels Gemini may apply (default: 2, cap: 5)
-- `HOST` (optional) — FastAPI bind address, default `0.0.0.0`
-- `PORT` (optional) — FastAPI port, default `8080`
-- `WORKER_CONCURRENCY` (optional) — max concurrent MR processes (default: 4; min enforced: 2)
-- `DEDUPE_TTL_SECONDS` (optional) — idempotency window for webhook dedup (default: 300)
-- `IP_ALLOWLIST` (optional) — comma-separated CIDRs or IPs allowed to call the webhook (e.g., `35.231.145.0/24,34.74.226.50`)
-- `AUTO_ALLOW_MY_IP` (optional) — if `true`, auto-detect and allow this machine's public IP
-- `MY_PUBLIC_IP` (optional) — manual override for auto-detected public IP (used if `AUTO_ALLOW_MY_IP=true`)
-- `RATE_LIMIT_PER_MIN` (optional) — per-IP requests per minute (default: 60)
-- `RATE_LIMIT_BURST` (optional) — burst capacity for rate limiting (default: RATE_LIMIT_PER_MIN)
-- `JIRA_URL` (optional) — Jira base URL, e.g., `https://yourcompany.atlassian.net`
-- `JIRA_EMAIL` (optional) — Jira account email for API auth
-- `JIRA_API_TOKEN` (optional) — Jira API token
-- `JIRA_PROJECT_KEYS` (optional) — comma-separated Jira project keys for scoping search (e.g., `ABC,PLAT`)
-- `JIRA_MAX_ISSUES` (optional) — max related issues to include (default: 5)
-- `JIRA_SEARCH_WINDOW` (optional) — fallback time window if created_at unavailable (default: `-30d`)
-- `WORKER_CONCURRENCY` (optional) — max concurrent MR processes (default: 4; min enforced: 2)
+Bootstrap your configuration by creating a `.env` file from the provided `.env.example`.
 
-Tip: For local development, expose your server with a tunnel (e.g., `ngrok http 8080`) and use the public URL as `WEBHOOK_URL`.
+**Core Variables:**
 
-## Run the webhook server
+- `GITLAB_URL`: Your GitLab instance URL.
+- `GITLAB_TOKEN`: A GitLab Personal Access Token with `api` scope.
+- `GITLAB_WEBHOOK_SECRET`: A secret for webhook payload validation.
+- `WEBHOOK_URL`: The public endpoint for your Forte server.
+
+**LLM Configuration (Google Gemini by default):**
+
+- `AGENTIC_PROVIDER`: `google` or `openai`.
+- `GOOGLE_API_KEY` / `OPENAI_API_KEY`: Your API key for the chosen provider.
+- `AGENTIC_MODEL`: The specific model to use (e.g., `gemini-1.5-flash`, `gpt-4o-mini`).
+
+For local development, `ngrok` can be used to expose your local server: `ngrok http 8080`.
+
+### 3. Launch the Service
 
 ```bash
-export GITLAB_TOKEN=...            # required
-export GITLAB_WEBHOOK_SECRET=...   # required
-export OPENAI_API_KEY=...          # or GOOGLE_API_KEY with AGENTIC_PROVIDER=google
 python main.py serve
 ```
 
-The server provides:
-- `POST /gitlab/webhook` — GitLab MR webhook endpoint
-- `GET /health` — health check
+### 4. Register Webhooks
 
-## Register webhooks for your projects
-
-Register MR webhooks for all projects where you have membership:
+Activate the assistant by registering webhooks for your target projects.
 
 ```bash
-export GITLAB_TOKEN=...             # required
-export GITLAB_WEBHOOK_SECRET=...    # required
-export WEBHOOK_URL=https://.../gitlab/webhook
 python main.py register-hooks
 ```
 
-Or target specific projects by ID:
+## Project Architecture
 
-```bash
-python main.py register-hooks --project-id 123 --project-id 456
-```
+The project is architected on SOLID principles for maintainability and scalability:
 
-## Integration testing helpers
+- `app/review/agentic/`: The core of the AI engine. This directory contains the agent orchestrator (`generator.py`), LLM clients (`llm.py`), and the specialized agents.
+- `app/review/agentic/agents/`: Home to the individual AI agents. Each file (`code_agent.py`, `diagram_agent.py`, etc.) defines a specialized agent. This modular structure is key to the project's extensibility.
+- `app/vcs/`: A hardware abstraction layer (HAL) for version control systems, enabling future support for platforms like GitHub.
+- `app/webhook/`: Ingress controller for webhook processing.
+- `app/server/`: FastAPI web server application.
+- `main.py`: CLI entry point for server management and utility commands.
 
-List your membership projects (IDs and paths):
+## Future Roadmap
 
-```bash
-python main.py list-projects
-```
-
-Create a test MR in a specific project (branch + commit + MR):
-
-```bash
-python main.py test-mr --project-id 123 \
-  --title "Webhook Test MR"
-```
-- Create a “messy” MR that should trigger inline/naming/test findings:
-
-```bash
-python main.py test-mr-2 --project-id 123 \
-  --title "AI Review Playground"
-```
-
-Options:
-- `--branch` custom branch name (default: `test-webhook-<timestamp>`)
-- `--file-path` file to create (default: `webhook_test.txt`)
-- `--target-branch` override target (default: project default branch)
-
-## What it does
-
-- On MR events (open, reopen, update), the webhook:
-  - Fetches the MR data via GitLab API
-  - Runs a multi-agent LangChain workflow that produces four GitLab notes:
-    1. Task context + code summary
-    2. Mermaid architecture diagram
-    3. Naming and documentation review
-    4. Test coverage review
-  - Optionally classifies the MR into up to `LABEL_MAX` labels from `LABEL_CANDIDATES` and applies them
-<<<<<<< HEAD
-  - If Jira is configured, searches related tickets (by title/description/labels/time) and includes a compact summary in the review context
-  - Posts a review comment back to the MR
-=======
->>>>>>> 77cbac2 (feat: add agentic langchain)
-
-## .env support
-
-If a `.env` file is present, it will be loaded on startup. Example:
-
-```env
-GITLAB_TOKEN=glpat-xxxx
-GITLAB_WEBHOOK_SECRET=supersecret
-WEBHOOK_URL=https://your-url/gitlab/webhook
-OPENAI_API_KEY=your-openai-key
-AGENTIC_MODEL=gpt-4o-mini
-```
-
-## Security
-
-- Never commit tokens to the repo.
-- Rotate any token that was previously exposed.
-- Use the `GITLAB_WEBHOOK_SECRET` to validate incoming webhook requests.
-
-## Limitations and next steps
-
-- Review is re-posted per MR event; deduplication/threading can be added if needed.
-- Diff length is capped to avoid large payloads.
-- You can refine prompts or add per-repo config as a future enhancement.
-
-## Project structure (SOLID)
-
-- `app/config/`: configuration and logging
-  - `app/config/config.py`: loads env into `AppConfig` and helper `read_env`
-  - `app/config/logging_config.py`: centralized logger configuration via `LOG_LEVEL`
-- `app/vcs/base.py`: VCS abstraction interface.
-- `app/vcs/gitlab_service.py`: GitLab implementation (projects, MR diffs, notes, hooks, test MR).
-- `app/vcs/github_service.py`: GitHub skeleton implementation (future).
-- `app/review/base.py`: `ReviewGenerator` interface returning multiple comments.
-- `app/review/agentic/`: LangChain-based orchestrator, agents, prompts, and project context.
-<<<<<<< HEAD
-- `app/webhook/processor.py`: validates webhook token, queues and processes MR tasks
-- `app/server/http.py`: FastAPI app wiring (routes)
-- `app/infra/task_executor.py`: bounded global worker pool (`WORKER_CONCURRENCY`)
-- `app/review/base.py`: `ReviewGenerator` interface returning multiple comments.
-- `app/review/agentic/`: LangChain-based orchestrator, agents, prompts, and project context.
-- `app/server.py`: FastAPI app wiring (routes).
-- `app/review/base.py`: `ReviewGenerator` interface.
-- `app/review/gemini_review.py`: Gemini implementation with model discovery and fallbacks.
-- `app/webhook/processor.py`: validates webhook token, queues and processes MR tasks
-- `app/server/http.py`: FastAPI app wiring (routes)
-- `app/infra/task_executor.py`: bounded global worker pool (`WORKER_CONCURRENCY`)
-=======
-- `app/webhook_processor.py`: validates webhook token, filters actions, orchestrates review.
-- `app/server.py`: FastAPI app wiring (routes).
->>>>>>> 77cbac2 (feat: add agentic langchain)
-- `main.py`: thin CLI entrypoint (`serve`, `register-hooks`, `list-projects`, `test-mr`).
+- **GitHub Integration**: Extend VCS support to GitHub Pull Requests.
+- **Enhanced Agent Capabilities**: Introduce new agents for security vulnerability analysis, performance profiling, and dependency checking.
+- **Granular Configuration**: Implement project-level configuration for fine-tuning review rules.
 
 ## Troubleshooting
 
-- 404 on ngrok “POST /”: webhook URL must end with `/gitlab/webhook`.
-- 401 Invalid webhook token: secret in GitLab Webhooks must equal `GITLAB_WEBHOOK_SECRET`.
-- 404 project/MR: verify IDs exist and PAT has access (Developer+).
-- Agentic reviewer disabled:
-  - Ensure the provider-specific API key is set and valid.
-  - Verify `AGENTIC_PROVIDER` and `AGENTIC_MODEL` match the provider you configured.
-- Tagging failures:
-  - Provide `GEMINI_API_KEY`/`GEMINI_MODEL` or remove `LABEL_CANDIDATES` to disable tagging.
-- Verbose logs:
-  - `export LOG_LEVEL=DEBUG`
-  - Server logs include agent execution details, retries, and tagging diagnostics.
+- **401 Invalid webhook token**: Ensure `GITLAB_WEBHOOK_SECRET` matches the secret in your GitLab webhook configuration.
+- **Agentic reviewer failures**: Verify your LLM provider API keys and model names are correctly configured.
+- **Enable verbose logging**: `export LOG_LEVEL=DEBUG`.
