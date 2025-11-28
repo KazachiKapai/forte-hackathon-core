@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/onboarding/status")
-async def onboarding_status(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+async def onboarding_status(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
 	return {
@@ -66,7 +66,7 @@ async def add_token(request: Request, current_user: dict[str, Any] = Depends(get
 
 
 @router.get("/tokens")
-async def list_tokens(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+async def list_tokens(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
 	out = []
@@ -85,7 +85,7 @@ async def list_tokens(current_user: dict[str, Any] = Depends(get_current_user)) 
 
 
 @router.delete("/tokens/{token_id}")
-async def delete_token_route(token_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> Response:
+async def delete_token_route(request: Request, token_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> Response:
 	user_id = current_user["user_id"]
 	token_service.delete_user_token(user_id, token_id)
 	return Response(status_code=204)

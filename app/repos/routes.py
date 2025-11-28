@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from ..auth.auth import get_current_user
 from . import service as repos_service
 
@@ -9,6 +9,7 @@ router = APIRouter()
 
 @router.get("/repositories")
 async def list_repositories(
+	request: Request,
 	search: str | None = None,
 	page: int = 1,
 	per_page: int = 10,
@@ -26,7 +27,7 @@ async def list_repositories(
 
 
 @router.post("/repositories/sync")
-async def sync_repositories_route(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+async def sync_repositories_route(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
 	count = repos_service.sync_repositories(user_id)
 	return {"synced": count}

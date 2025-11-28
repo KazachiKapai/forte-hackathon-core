@@ -32,8 +32,19 @@ async def get_auth(request: Request):
         )
         
         # Authenticate the request using Clerk's authenticate_request
+        # Get origin and referer from headers
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+        
+        # Build the list of authorized parties
+        authorized_parties = [frontend_url]
+        if origin:
+            authorized_parties.append(origin)
+        if referer:
+            authorized_parties.append(referer)
+            
         options = AuthenticateRequestOptions(
-            authorized_parties=[frontend_url]
+            authorized_parties=authorized_parties
         )
         logger.debug(f"Authenticating with authorized_parties={[frontend_url]}")
         request_state = clerk.authenticate_request(httpx_request, options)
