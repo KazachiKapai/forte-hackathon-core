@@ -1,9 +1,9 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..config.logging_config import configure_logging
-from ..security.session import require_auth
+from ..auth.auth import get_current_user
 from ..storage.json_store import load_json, save_json
 from . import service as token_service
 
@@ -12,9 +12,8 @@ router = APIRouter()
 
 
 @router.get("/api/onboarding/status")
-async def onboarding_status(request: Request) -> dict[str, Any]:
-	sess = require_auth(request)
-	user_id = sess["user"]["id"]
+async def onboarding_status(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
 	return {
 		"completed": True,
@@ -24,9 +23,8 @@ async def onboarding_status(request: Request) -> dict[str, Any]:
 
 
 @router.post("/api/onboarding/token")
-async def add_token(request: Request) -> dict[str, Any]:
-	sess = require_auth(request)
-	user_id = sess["user"]["id"]
+async def add_token(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+	user_id = current_user["user_id"]
 	body = await request.json()
 	token = (body.get("token") or "").strip()
 	name = (body.get("name") or "").strip() or "Token"
@@ -46,9 +44,8 @@ async def add_token(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/tokens")
-async def list_tokens(request: Request) -> dict[str, Any]:
-	sess = require_auth(request)
-	user_id = sess["user"]["id"]
+async def list_tokens(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+	user_id = current_user["user_id"]
 	user_tokens = token_service.list_user_tokens(user_id)
 	out = []
 	for t in user_tokens:
@@ -66,10 +63,7 @@ async def list_tokens(request: Request) -> dict[str, Any]:
 
 
 @router.delete("/api/tokens/{token_id}")
-async def delete_token_route(token_id: str, request: Request) -> Response:
-	sess = require_auth(request)
-	user_id = sess["user"]["id"]
+async def delete_token_route(token_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> Response:
+	user_id = current_user["user_id"]
 	token_service.delete_user_token(user_id, token_id)
 	return Response(status_code=204)
-
-
