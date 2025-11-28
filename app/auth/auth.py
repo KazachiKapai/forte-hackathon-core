@@ -5,6 +5,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from clerk_backend_api import Clerk
 from clerk_backend_api.security.types import AuthenticateRequestOptions
 import httpx
+from ..config.logging_config import configure_logging
+
+_LOGGER = configure_logging()
 
 # Initialize security scheme
 security = HTTPBearer()
@@ -26,6 +29,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         HTTPException: If token is invalid or expired
     """
     if not credentials:
+        _LOGGER.warning("Missing authentication credentials")
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         # Create an httpx.Request object with the authorization header
@@ -36,15 +40,14 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         )
         
         # Authenticate the request
-        request_state = clerk_client.authenticate_request(
-            request,
-            AuthenticateRequestOptions(
-                authorized_parties=[frontend_url]
-            )
+        options = AuthenticateRequestOptions(
+            authorized_parties=[frontend_url]
         )
+        request_state = clerk_client.authenticate_request(request, options)
         
         # Check if user is signed in
         if not request_state.is_signed_in or not request_state.payload:
+            _LOGGER.warning(f"User not signed in or no payload. SignedIn: {request_state.is_signed_in}")
             raise HTTPException(
                 status_code=401,
                 detail="Not authenticated"
@@ -58,6 +61,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         }
         
     except Exception as e:
+        _LOGGER.error(f"Authentication failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=401,
             detail=f"Invalid authentication credentials: {str(e)}"

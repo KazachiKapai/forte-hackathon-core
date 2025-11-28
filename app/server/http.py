@@ -3,7 +3,7 @@ import re
 import urllib.parse
 from collections import deque
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -138,7 +138,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 	)
 
 	# All routes in this router will be protected by the get_auth dependency
-	api_router = FastAPI(dependencies=[Depends(get_auth)])
+	api_router = APIRouter(dependencies=[Depends(get_auth)])
 
 	@app.get("/health")
 	async def health() -> dict[str, str]:
