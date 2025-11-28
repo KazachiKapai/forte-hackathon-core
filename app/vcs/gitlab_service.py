@@ -11,6 +11,16 @@ class GitLabService(VCSService):
 	def __init__(self, base_url: str, private_token: str) -> None:
 		self.client = gitlab.Gitlab(base_url, private_token=private_token)
 
+	def get_current_user_id(self) -> int | None:
+		"""
+		Return the authenticated user's id (bot account).
+		"""
+		try:
+			u = self.client.user
+			return int(getattr(u, "id", None)) if getattr(u, "id", None) is not None else None
+		except Exception:
+			return None
+
 	def get_project(self, project_id: int) -> Any:
 		return self.client.projects.get(project_id)
 
@@ -20,11 +30,11 @@ class GitLabService(VCSService):
 	def ensure_webhook_for_project(self, project: Any, webhook_url: str, secret_token: str) -> tuple[bool, int | None]:
 		existing_hooks = project.hooks.list(all=True)
 		for hook in existing_hooks:
-			if hook.url == webhook_url and getattr(hook, "merge_requests_events", False):
+			if hook.url == webhook_url and getattr(hook, "merge_requests_events", False) and getattr(hook, "note_events", False):
 				if getattr(hook, "token", None) != secret_token:
 					hook.token = secret_token
 					hook.save()
-				return (False, hook.id)
+				return False, hook.id
 		new_hook = project.hooks.create(
 			{
 				"url": webhook_url,
@@ -33,13 +43,13 @@ class GitLabService(VCSService):
 				"push_events": False,
 				"tag_push_events": False,
 				"merge_requests_events": True,
-				"note_events": False,
+				"note_events": True,
 				"job_events": False,
 				"pipeline_events": False,
 				"wiki_page_events": False,
 			}
 		)
-		return (True, new_hook.id)
+		return True, new_hook.id
 
 	def collect_mr_diff_text(self, project: Any, mr_iid: int, max_chars: int = 50_000) -> str:
 		mr = project.mergerequests.get(mr_iid)
@@ -81,6 +91,56 @@ class GitLabService(VCSService):
 			mr.discussions.create({"body": body, "position": position})
 		except Exception:
 			self.post_mr_note(project, mr_iid, f"{body}\n(path: {file_path}, line: {new_line})")
+
+	def get_discussion_first_note_body(self, project: Any, mr_iid: int, discussion_id: str) -> str | None:
+		"""
+		Return the body of the first note in a discussion thread.
+		"""
+		try:
+			mr = project.mergerequests.get(mr_iid)
+			discussion = mr.discussions.get(discussion_id)
+			notes = getattr(discussion, "notes", None)
+			if not notes:
+				return None
+			# Some versions expose .notes as a list-like accessor
+			first = notes[0] if len(notes) > 0 else None  # type: ignore[index]
+			if not first:
+				return None
+			return getattr(first, "body", None)
+		except Exception:
+			return None
+
+	def get_discussion_first_note_author_id(self, project: Any, mr_iid: int, discussion_id: str) -> int | None:
+		"""
+		Return the author id of the first note in a discussion thread.
+		"""
+		try:
+			mr = project.mergerequests.get(mr_iid)
+			discussion = mr.discussions.get(discussion_id)
+			notes = getattr(discussion, "notes", None)
+			if not notes:
+				return None
+			first = notes[0] if len(notes) > 0 else None  # type: ignore[index]
+			if not first:
+				return None
+			author = getattr(first, "author", None)
+			aid = None
+			if isinstance(author, dict):
+				aid = author.get("id")
+			if aid is None:
+				aid = getattr(first, "author_id", None)
+			return int(aid) if aid is not None else None
+		except Exception:
+			return None
+
+	def reply_to_discussion(self, project: Any, mr_iid: int, discussion_id: str, body: str) -> None:
+		"""
+		Post a reply note into an existing discussion thread.
+		"""
+		mr = project.mergerequests.get(mr_iid)
+		discussion = mr.discussions.get(discussion_id)
+		# Some API versions expose .notes.create on the discussion object
+		discussion.notes.create({"body": body})
 
 	def get_mr_branches(self, project: Any, mr_iid: int) -> tuple[str, str]:
 		mr = project.mergerequests.get(mr_iid)

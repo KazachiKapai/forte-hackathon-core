@@ -3,6 +3,7 @@ from .diagram_agent import DiagramAgent
 from .naming_agent import NamingQualityAgent
 from .task_agent import TaskContextAgent
 from .test_agent import TestCoverageAgent
+from .discussion_agent import DiscussionAgent
 
 __all__ = [
 	"TaskContextAgent",
@@ -10,6 +11,7 @@ __all__ = [
 	"NamingQualityAgent",
 	"TestCoverageAgent",
 	"DiagramAgent",
+	"DiscussionAgent",
 ]
 
 

@@ -25,30 +25,30 @@ async def onboarding_status(current_user: dict[str, Any] = Depends(get_current_u
 @router.post("/onboarding/token")
 async def add_token(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 	user_id = current_user["user_id"]
-	
+
 	# Parse JSON body with error handling
 	try:
 		body = await request.json()
 	except Exception as e:
 		_LOGGER.error(f"Failed to parse JSON body: {e}")
 		raise HTTPException(status_code=400, detail="Invalid JSON in request body")
-	
+
 	token = (body.get("token") or "").strip()
 	name = (body.get("name") or "").strip() or "Token"
-	
+
 	if not token:
 		raise HTTPException(status_code=400, detail="Token is required")
-	
+
 	if not token.startswith("glpat-"):
 		raise HTTPException(status_code=400, detail="Invalid token format")
-	
+
 	ok, proj_id = token_service.validate_token_with_gitlab(token)
 	if not ok:
 		raise HTTPException(status_code=400, detail="Token validation failed with GitLab")
-	
+
 	new_token = token_service.add_user_token(user_id, token, name)
 	new_token["project_id"] = proj_id
-	
+
 	# To avoid saving the token twice, we can update the project_id in the stored token
 	tokens: dict[str, list[dict[str, Any]]] = load_json("tokens.json", {})
 	user_tokens = tokens.get(user_id, [])
@@ -57,11 +57,11 @@ async def add_token(request: Request, current_user: dict[str, Any] = Depends(get
 			t["project_id"] = proj_id
 			break
 	save_json("tokens.json", tokens)
-	
+
 	# For security, don't return the raw token in the response
 	token_response = new_token.copy()
 	token_response.pop("token", None)
-	
+
 	return {"success": True, "message": "Token added successfully", "token": token_response}
 
 

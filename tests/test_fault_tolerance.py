@@ -17,6 +17,7 @@ def _mr_payload(iid: int = 1, action: str = "open", updated_at: str = "2025-01-0
 
 def test_rate_limit_429_on_burst(app_client, monkeypatch):
 	# Configure very low rate limit and trust proxy for deterministic client IP
+	# TODO: Update this test when infra package is removed and rate limiting is inlined
 	from app.infra import ratelimit as rl
 	monkeypatch.setenv("TRUST_PROXY", "true")
 	monkeypatch.setenv("RATE_LIMIT_PER_MIN", "1")
@@ -65,6 +66,7 @@ def test_webhook_cooldown_skips_back_to_back(app_client):
 
 def test_webhook_duplicate_skipped_with_uuid(app_client, monkeypatch):
 	# Bypass cooldown so dedupe logic is exercised deterministically
+	# TODO: Update this test when infra package is removed and cooldown is inlined
 	from app.server import http as httpmod
 
 	class AlwaysAllowCooldown:

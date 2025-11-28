@@ -36,9 +36,10 @@ def test_webhook_invalid_token_401(app_client):
 
 
 def test_webhook_handle_error_bubbles_status(app_client):
+	from app.server.models import StatusResponse
 	client, fp = app_client
 	# Make handler return error
-	fp.handle_result = {"status": "error", "code": 400, "message": "bad"}
+	fp.handle_result = StatusResponse(status="error", code=400, message="bad")
 	r = client.post(
 		"/gitlab/webhook",
 		headers={"X-Gitlab-Event": "Merge Request Hook", "X-Gitlab-Token": "secret"},

@@ -61,7 +61,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 		inline_findings: list[AgentFinding] = []
 		if not self.agents:
 			return ReviewOutput(comments=[], inline_findings=[])
-		# Run agents in parallel with bounded concurrency
+
 		max_workers = min(self.max_concurrency, len(self.agents))
 		with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="agent-worker") as pool:
 			future_to_key = {pool.submit(self._run_agent, agent, payload): agent.key for agent in self.agents}
@@ -75,7 +75,7 @@ class AgenticReviewGenerator(ReviewGenerator):
 				results[key] = res
 				if getattr(res, "findings", None):
 					inline_findings.extend(res.findings)
-		# Ensure deterministic ordering of inline findings across parallel agents
+
 		if inline_findings:
 			inline_findings.sort(key=lambda f: (getattr(f, "path", "") or "", getattr(f, "line", 0)))
 		comments = self._compose_comments(payload, results)

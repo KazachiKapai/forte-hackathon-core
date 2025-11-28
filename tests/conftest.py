@@ -12,15 +12,19 @@ if str(ROOT_DIR) not in sys.path:
 
 class FakeProcessor:
 	def __init__(self, secret: str = "secret") -> None:
+		from app.server.models import StatusResponse
 		self._secret = secret
 		self.process_calls = []
-		self.handle_result = {"status": "ok", "validated": True}
+		self.handle_result = StatusResponse(status="ok", validated=True)
 
 	def validate_secret(self, provided):
 		if not provided or provided != self._secret:
 			raise PermissionError("Invalid")
 
 	def handle_merge_request_event(self, payload):
+		return self.handle_result
+
+	def handle_note_event(self, payload):
 		return self.handle_result
 
 	def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, event_uuid: str = None):

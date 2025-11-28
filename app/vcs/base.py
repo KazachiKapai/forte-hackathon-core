@@ -9,6 +9,9 @@ class VCSService(ABC):
 	to these generic methods.
 	"""
 
+	# Session / identity
+	def get_current_user_id(self) -> int | None: ...
+
 	@abstractmethod
 	def get_project(self, project_id: int) -> Any: ...
 
@@ -26,6 +29,10 @@ class VCSService(ABC):
 
 	@abstractmethod
 	def review_line(self, project: Any, mr_iid: int, body: str, file_path: str, new_line: int) -> None: ...
+
+	# Discussions
+	def get_discussion_first_note_body(self, project: Any, mr_iid: int, discussion_id: str) -> str | None: ...
+	def reply_to_discussion(self, project: Any, mr_iid: int, discussion_id: str, body: str) -> None: ...
 
 	@abstractmethod
 	def get_mr_branches(self, project: Any, mr_iid: int) -> tuple[str, str]: ...

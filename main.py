@@ -11,11 +11,16 @@ load_dotenv()
 from app.config.config import AppConfig
 from app.config.logging_config import configure_logging
 from app.integrations.jira_service import JiraService
-from app.server.bootstrap import build_services
-from app.server.http import create_app
+from app.server import create_app
+from app.server.bootstrap import build_services as _bootstrap_build_services
 from app.vcs.gitlab_service import GitLabService
 
 _LOGGER = configure_logging()
+
+
+# Backward-compatible shim; delegate to server bootstrap
+def build_services(cfg: AppConfig):
+	return _bootstrap_build_services(cfg)
 
 
 def _print_test_mr_result(res: dict[str, Any]) -> None:
@@ -101,8 +106,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 	cfg = AppConfig()
 	processor = build_services(cfg)
 	app = create_app(processor)
-	port = int(os.getenv("PORT", "8080"))
-	uvicorn.run(app, host=cfg.host, port=port)
+	uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="debug")
 
 
 def cmd_list_projects(args: argparse.Namespace) -> None:
@@ -189,12 +193,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	p_jls = sub.add_parser("list-jira-projects", help="List Jira projects (keys and names)")
 	p_jls.set_defaults(func=cmd_list_jira_projects)
 	return parser
-
-
-# Expose app for Vercel/Uvicorn
-cfg = AppConfig()
-processor = build_services(cfg)
-app = create_app(processor)
 
 
 def main() -> None:
