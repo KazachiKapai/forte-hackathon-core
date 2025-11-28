@@ -3,10 +3,11 @@ import re
 import urllib.parse
 from collections import deque
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from ..auth.middleware import get_auth
 from ..auth import router as auth_router
 from ..config.logging_config import configure_logging
 from ..infra.cooldown import get_cooldown_store
@@ -136,14 +137,19 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 		allow_headers=["*"],
 	)
 
+	# All routes in this router will be protected by the get_auth dependency
+	api_router = FastAPI(dependencies=[Depends(get_auth)])
+
 	@app.get("/health")
 	async def health() -> dict[str, str]:
 		return {"status": "ok"}
 
 	# Mount feature routers
-	app.include_router(auth_router)
-	app.include_router(tokens_router)
-	app.include_router(repos_router)
+	api_router.include_router(auth_router)
+	api_router.include_router(tokens_router)
+	api_router.include_router(repos_router)
+
+	app.include_router(api_router, prefix="/api")
 
 	@app.post("/gitlab/webhook")
 	async def gitlab_webhook(

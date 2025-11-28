@@ -35,5 +35,3 @@ def api_get_user(access_token: str) -> dict[str, Any]:
 
 def build_authorize_url(state: str) -> str:
 	return _get_provider().build_authorize_url(state)
-
-

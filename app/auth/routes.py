@@ -71,5 +71,3 @@ async def auth_logout(request: Request) -> JSONResponse:
 	resp = JSONResponse({"status": "ok"})
 	clear_session(resp, request)
 	return resp
-
-
