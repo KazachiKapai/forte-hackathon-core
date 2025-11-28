@@ -61,12 +61,7 @@ class WebhookProcessor:
         obj = payload["object_attributes"]
         discussion_id = obj["discussion_id"]
         note_body = obj["note"]
-        user_info = payload["user"]
-        user_id = user_info["id"]
         project = self.service.get_project(project_id)
-        bot_id = self.service.get_current_user_id()
-        if int(user_id) == int(bot_id):
-            return
         first_body = self.service.get_discussion_first_note_body(project, mr_iid, discussion_id)
         reply = self._generate_discussion_reply(first_body or "", note_body or "")
         self.service.reply_to_discussion(project, mr_iid, discussion_id, reply)

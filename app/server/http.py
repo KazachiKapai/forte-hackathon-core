@@ -56,14 +56,17 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
         logger.debug(payload)
 
         attrs = payload["object_attributes"]
+
+        bot_id = processor.service.get_current_user_id()
+        author_id = int(attrs["author_id"])
+        if bot_id == author_id:
+            return StatusResponse(status="ignored", reason="ignore bot's actions", code=400)
+
         project_info = payload["project"]
 
         project_id = project_info["id"]
 
         if payload["object_kind"] == "note":
-            if attrs["type"] != "DiffNote" and int(attrs["author_id"]) == processor.service.get_current_user_id():
-                return StatusResponse(status="ignored", code=400)
-
             mr = payload["merge_request"]
             mr_iid = mr["iid"]
             processor.process_note_comment(project_id, mr_iid, payload)
