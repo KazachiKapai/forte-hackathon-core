@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,16 +42,16 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 
     app.include_router(api_router, prefix="/api")
 
-    @app.post("/gitlab/webhook", response_model=StatusResponse, response_model_exclude_none=True)
+    @app.post("/gitlab/webhook")
     async def gitlab_webhook(
             request: Request,
             x_gitlab_event: str | None = Header(default=None, alias="X-Gitlab-Event"),
             x_gitlab_token: str | None = Header(default=None, alias="X-Gitlab-Token"),
-    ) -> StatusResponse:
+    ) -> dict[str, Any]:
         logger.debug(x_gitlab_event)
 
         if not _validate_webhook_headers(processor, x_gitlab_event):
-            return StatusResponse(status="ignored", reason="unsupported_event", code=400)
+            return {"success": False, "status": 400, "message": "not _validate_webhook_headers(processor, x_gitlab_event)"}
 
         payload = await request.json()
         logger.debug(payload)
@@ -60,7 +61,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
         bot_id = processor.service.get_current_user_id()
         author_id = int(attrs["author_id"])
         if bot_id == author_id:
-            return StatusResponse(status="ignored", reason="ignore bot's actions", code=400)
+            return {"success": False, "status": 400, "message": "bot_id == author_id"}
 
         project_info = payload["project"]
 
@@ -70,10 +71,10 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
             mr = payload["merge_request"]
             mr_iid = mr["iid"]
             processor.process_note_comment(project_id, mr_iid, payload)
-            return StatusResponse(status="ok", code=200)
+            return {"success": True, "status": 200, "message": "processor.process_note_comment(project_id, mr_iid, payload)"}
 
         if not processor.handle_merge_request_event(payload):
-            return StatusResponse(status="ignored", code=400)
+            return {"success": False, "status": 400, "message": "not processor.handle_merge_request_event(payload):"}
 
         last_commit = attrs["last_commit"]["id"]
         mr_iid = attrs["iid"]
@@ -84,6 +85,6 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
         description = attrs["description"]
         processor.process_merge_request(project_id, mr_iid, title, description, last_commit)
 
-        return StatusResponse(status="ok", code=200)
+        return {"success": True, "status": 200, "message": "processor.process_merge_request(project_id, mr_iid, title, description, last_commit)"}
 
     return app
