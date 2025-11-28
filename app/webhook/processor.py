@@ -4,6 +4,7 @@ from typing import Any
 
 from ..integrations.jira_service import JiraService
 from ..review.base import InlineFinding, ReviewGenerator, ReviewOutput
+from ..storage.provider import get_kv_store
 from ..tagging.base import TagClassifier
 from ..vcs.base import VCSService
 from ..storage.json_store import load_json, save_json
@@ -33,14 +34,23 @@ class WebhookProcessor:
         return provided and provided == self.webhook_secret
 
     def handle_merge_request_event(self, payload: dict[str, Any]) -> bool:
-        if payload.get("object_kind") != "merge_request":
+        if payload["object_kind"] != "merge_request":
             return False
 
-        attrs = payload.get("object_attributes", {}) or {}
-        action = attrs.get("action")
-        return action in _ALLOWED_ACTIONS
+        attrs = payload["object_attributes"]
+        action = attrs["action"]
+        return action == "open"
 
     def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, commit_sha: str | None = None) -> None:
+        store = get_kv_store()
+        commits = store.get_json("last_commits.json", {})
+
+        if commits[commit_sha] == 0:
+            commits[commit_sha] = 1
+            store.set_json("last_commits.json", commits)
+        else:
+            pass
+
         project = self.service.get_project(project_id)
         diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
         description_aug = self._augment_with_tickets(project, mr_iid, title, description)
