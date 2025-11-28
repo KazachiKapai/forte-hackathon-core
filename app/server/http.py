@@ -15,8 +15,8 @@ from ..config import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
-def _validate_webhook_headers(processor: WebhookProcessor, x_gitlab_event: str | None, x_gitlab_token: str | None) -> bool:
-    return processor.validate_secret(x_gitlab_token) and ["Note Hook", "Merge Request Hook"].__contains__(x_gitlab_event)
+def _validate_webhook_headers(processor: WebhookProcessor, x_gitlab_event: str | None,) -> bool:
+    return ["Note Hook", "Merge Request Hook"].__contains__(x_gitlab_event)
 
 
 def create_app(processor: WebhookProcessor) -> FastAPI:
@@ -49,7 +49,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
     ) -> StatusResponse:
         logger.debug(x_gitlab_event)
 
-        if not _validate_webhook_headers(processor, x_gitlab_event, x_gitlab_token):
+        if not _validate_webhook_headers(processor, x_gitlab_event):
             return StatusResponse(status="ignored", reason="unsupported_event", code=400)
 
         payload = await request.json()
