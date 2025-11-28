@@ -15,8 +15,8 @@ from ..config import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
-def _validate_webhook_headers(processor: WebhookProcessor, x_gitlab_event: str | None, x_gitlab_token: str | None) -> bool:
-    return processor.validate_secret(x_gitlab_token) and x_gitlab_event in {"Merge Request Hook", "Note Hook"}
+def _validate_webhook_headers(processor: WebhookProcessor, x_gitlab_event: str | None,) -> bool:
+    return ["Note Hook", "Merge Request Hook"].__contains__(x_gitlab_event)
 
 
 def create_app(processor: WebhookProcessor) -> FastAPI:
@@ -49,13 +49,19 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
     ) -> StatusResponse:
         logger.debug(x_gitlab_event)
 
-        if not _validate_webhook_headers(processor, x_gitlab_event, x_gitlab_token):
+        if not _validate_webhook_headers(processor, x_gitlab_event):
             return StatusResponse(status="ignored", reason="unsupported_event", code=400)
 
         payload = await request.json()
         logger.debug(payload)
 
         attrs = payload["object_attributes"]
+
+        bot_id = processor.service.get_current_user_id()
+        author_id = int(attrs["author_id"])
+        if bot_id == author_id:
+            return StatusResponse(status="ignored", reason="ignore bot's actions", code=400)
+
         project_info = payload["project"]
 
         project_id = project_info["id"]
@@ -68,7 +74,6 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
 
         if not processor.handle_merge_request_event(payload):
             return StatusResponse(status="ignored", code=400)
-
 
         last_commit = attrs["last_commit"]["id"]
         mr_iid = attrs["iid"]

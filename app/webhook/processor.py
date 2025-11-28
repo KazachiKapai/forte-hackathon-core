@@ -4,6 +4,7 @@ from typing import Any
 
 from ..integrations.jira_service import JiraService
 from ..review.base import InlineFinding, ReviewGenerator, ReviewOutput
+from ..storage.provider import get_kv_store
 from ..tagging.base import TagClassifier
 from ..vcs.base import VCSService
 from ..storage.json_store import load_json, save_json
@@ -33,12 +34,12 @@ class WebhookProcessor:
         return provided and provided == self.webhook_secret
 
     def handle_merge_request_event(self, payload: dict[str, Any]) -> bool:
-        if payload.get("object_kind") != "merge_request":
+        if payload["object_kind"] != "merge_request":
             return False
 
-        attrs = payload.get("object_attributes", {}) or {}
-        action = attrs.get("action")
-        return action in _ALLOWED_ACTIONS
+        attrs = payload["object_attributes"]
+        action = attrs["action"]
+        return action == "open"
 
     def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, commit_sha: str | None = None) -> None:
         project = self.service.get_project(project_id)
@@ -51,12 +52,7 @@ class WebhookProcessor:
         obj = payload["object_attributes"]
         discussion_id = obj["discussion_id"]
         note_body = obj["note"]
-        user_info = payload["user"]
-        user_id = user_info["id"]
         project = self.service.get_project(project_id)
-        bot_id = self.service.get_current_user_id()
-        if bot_id is not None and user_id is not None and int(user_id) == int(bot_id):
-            return
         first_body = self.service.get_discussion_first_note_body(project, mr_iid, discussion_id)
         reply = self._generate_discussion_reply(first_body or "", note_body or "")
         self.service.reply_to_discussion(project, mr_iid, discussion_id, reply)

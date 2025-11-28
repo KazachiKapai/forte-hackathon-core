@@ -139,7 +139,6 @@ class GitLabService(VCSService):
 		"""
 		mr = project.mergerequests.get(mr_iid)
 		discussion = mr.discussions.get(discussion_id)
-		# Some API versions expose .notes.create on the discussion object
 		discussion.notes.create({"body": body})
 
 	def get_mr_branches(self, project: Any, mr_iid: int) -> tuple[str, str]:
