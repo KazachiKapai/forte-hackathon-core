@@ -57,14 +57,7 @@ def create_app(processor: WebhookProcessor) -> FastAPI:
         logger.debug(payload)
 
         attrs = payload["object_attributes"]
-
-        bot_id = processor.service.get_current_user_id()
-        author_id = int(attrs["author_id"])
-        if bot_id == author_id:
-            return {"success": False, "status": 400, "message": "bot_id == author_id"}
-
         project_info = payload["project"]
-
         project_id = project_info["id"]
 
         if payload["object_kind"] == "note":
