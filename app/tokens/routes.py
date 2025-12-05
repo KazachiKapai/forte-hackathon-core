@@ -7,13 +7,13 @@ from ..config.logging_config import configure_logging
 from ..auth.auth import get_current_user
 from ..storage.json_store import load_json, save_json
 from . import service as token_service
+from ..storage.provider import get_kv_store
 from ..vcs.gitlab_service import GitLabService
 
 _LOGGER = configure_logging()
 router = APIRouter()
 
 cfg = AppConfig()
-gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
 
 @router.get("/onboarding/status")
 async def onboarding_status(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
@@ -53,6 +53,8 @@ async def add_token(request: Request, current_user: dict[str, Any] = Depends(get
     new_token = token_service.add_user_token(user_id, token, name)
     new_token["project_id"] = proj_id
 
+    private_token = get_kv_store().get_first_token_by_project(proj_id)
+    gl_service = GitLabService("", private_token)
     project = gl_service.get_project(proj_id)
     gl_service.ensure_webhook_for_project(project, cfg.webhook_url, cfg.webhook_secret)
 
