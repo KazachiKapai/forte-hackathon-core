@@ -82,7 +82,7 @@ class MongoKeyValueStore(KeyValueStore):
             The token string if found, None otherwise
         """
         try:
-            doc = self.col.find_one({"_id": {"$exists": True}})
+            doc = self.col.find_one({"_id": "tokens.json"})
             if not doc or "data" not in doc:
                 return ""
 
