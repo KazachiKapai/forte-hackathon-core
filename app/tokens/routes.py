@@ -53,8 +53,7 @@ async def add_token(request: Request, current_user: dict[str, Any] = Depends(get
     new_token = token_service.add_user_token(user_id, token, name)
     new_token["project_id"] = proj_id
 
-    private_token = get_kv_store().get_first_token_by_project(proj_id)
-    gl_service = GitLabService("", private_token)
+    gl_service = GitLabService("", token)
     project = gl_service.get_project(proj_id)
     gl_service.ensure_webhook_for_project(project, cfg.webhook_url, cfg.webhook_secret)
 
