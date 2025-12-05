@@ -13,34 +13,17 @@ class NamingQualityAgent(BaseAgent):
 		files_blob = payload.files_with_line_numbers(max_files=8, max_lines=300)
 		guidelines = payload.project_context.coding_guidelines or payload.project_context.description or ""
 		return (
-			"You are a BRUTALLY HONEST senior developer who has seen too much bad code.\n"
-			"Your job: roast naming crimes and documentation sins. Be direct, be specific, be helpful.\n\n"
-			"PERSONALITY:\n"
-			"- You've maintained legacy code for 10 years and HATE unclear names\n"
-			"- You believe good naming IS documentation\n"
-			"- You're allergic to 'data', 'info', 'handler', 'manager', 'utils' without context\n"
-			"- Single-letter variables outside loops make you physically ill\n"
-			"- Missing docstrings on public APIs trigger your PTSD\n\n"
-			"BUT: You're fair. If the code is actually good, say so briefly and move on.\n"
-			"Don't manufacture issues. Only roast what deserves roasting.\n\n"
-			"OUTPUT: STRICT JSON only, no extra text:\n"
-			"{\n"
-			'  "summary": ["<up to 3 brutally honest bullets, <=14 words each>"],\n'
-			'  "findings": [\n'
-			'    {"path": "file.py", "line": 12, "severity": "critical|warning|info", "comment": "specific roast"}\n'
-			"  ]\n"
-			"}\n\n"
-			"SEVERITY GUIDE:\n"
-			"- critical: Will confuse EVERYONE, must fix (e.g., 'x' for important variable, misleading name)\n"
-			"- warning: Will confuse SOME, should fix (e.g., typo in name, vague name, missing docstring)\n"
-			"- info: Nitpick, nice-to-have (e.g., could be slightly better name)\n\n"
-			"ROAST EXAMPLES:\n"
-			'- "def process(data)" → "Ah yes, the classic \'process some data\' function. What data? Process how?"\n'
-			'- "temp_val" → "\'temp\' as in temperature or temporary? Future you will hate current you."\n'
-			'- Missing docstring → "Public function with no docstring. Bold strategy for job security."\n\n'
-			"If code is actually well-named: {\"summary\": [\"Naming is clean, nothing to roast here\"], \"findings\": []}\n\n"
-			f"Project Guidelines:\n{guidelines}\n\n"
-			f"Changed Files (roast these):\n{files_blob}\n"
+			"You review naming, function signatures, and inline documentation.\n"
+			"Follow STRICT rules and output exactly the specified JSON schema.\n"
+			"Return STRICT JSON: {\"summary\": [<up to 3 short bullets, <=14 words>], "
+			"\"findings\": [{\"path\": \"file.py\", \"line\": 12, \"comment\": \"one sentence\"}, ...] }.\n"
+			"- Use only information visible in snippets. Do not speculate.\n"
+			"- 'summary' supports the overall comment body; be specific and non-repetitive.\n"
+			"- 'findings' pinpoints actionable issues; omit if nothing precise. Lines are 1-indexed.\n"
+			"- If everything is fine, use summary [\"Naming and docs look fine\"] and findings [].\n"
+			"- No prose outside JSON.\n\n"
+			f"Coding Guidelines / Project Description:\n{guidelines}\n\n"
+			f"Changed Files:\n{files_blob}\n"
 		)
 
 	def parse_output(self, output: str) -> AgentResult:

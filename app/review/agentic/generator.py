@@ -1,16 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ...config.logging_config import configure_logging
-from ..base import InlineFinding, ReviewComment, ReviewOutput
+from ..base import InlineFinding, ReviewComment, ReviewGenerator, ReviewOutput
 from .agents import (
     CodeSummaryAgent,
     DiagramAgent,
     NamingQualityAgent,
     TaskContextAgent,
     TestCoverageAgent,
-    VerdictAgent,
 )
-from .agents.base import BaseAgent
 from .context_loader import load_project_context
 from .llm import build_llm_client
 from .models import AgentFinding, AgentPayload, AgentResult
@@ -18,7 +16,7 @@ from .models import AgentFinding, AgentPayload, AgentResult
 _LOGGER = configure_logging()
 
 
-class AgenticReviewGenerator:
+class AgenticReviewGenerator(ReviewGenerator):
 	def __init__(
 		self,
 		provider: str,
@@ -34,14 +32,13 @@ class AgenticReviewGenerator:
 		self.max_retries = max(0, max_retries)
 		self.client = build_llm_client(provider, model, openai_api_key, google_api_key, timeout)
 		self.max_concurrency = max(1, int(max_concurrency))
-		self.agents: list[BaseAgent] = [
+		self.agents = [
 			TaskContextAgent(),
 			CodeSummaryAgent(),
 			DiagramAgent(),
 			NamingQualityAgent(),
 			TestCoverageAgent(),
 		]
-		self.verdict_agent = VerdictAgent()
 
 	def generate_review(
 		self,
@@ -79,11 +76,6 @@ class AgenticReviewGenerator:
 				if getattr(res, "findings", None):
 					inline_findings.extend(res.findings)
 
-		# Run VerdictAgent AFTER all other agents complete
-		verdict_result = self._run_verdict_agent(payload, inline_findings, results)
-		if verdict_result:
-			results["verdict"] = verdict_result
-
 		if inline_findings:
 			inline_findings.sort(key=lambda f: (getattr(f, "path", "") or "", getattr(f, "line", 0)))
 		comments = self._compose_comments(payload, results)
@@ -95,28 +87,7 @@ class AgenticReviewGenerator:
 			],
 		)
 
-	def _run_verdict_agent(
-		self, 
-		payload: AgentPayload, 
-		findings: list[AgentFinding], 
-		results: dict[str, AgentResult]
-	) -> AgentResult | None:
-		"""Run verdict agent with context from other agents."""
-		try:
-			# Collect summaries from other agents
-			summaries = {}
-			for key, result in results.items():
-				if result.success and result.content:
-					summaries[key] = result.content[:500]  # Truncate for context
-			
-			# Set context for verdict agent
-			self.verdict_agent.set_context(findings, summaries)
-			return self._run_agent(self.verdict_agent, payload)
-		except Exception as exc:
-			_LOGGER.warning("Verdict agent failed", extra={"error": str(exc)})
-			return None
-
-	def _run_agent(self, agent: BaseAgent, payload: AgentPayload) -> AgentResult:
+	def _run_agent(self, agent, payload: AgentPayload) -> AgentResult:
 		if not self.client.available:
 			return AgentResult(key=agent.key, success=False, error=self.client.unavailable_reason or "LLM unavailable")
 		last_error = None
@@ -134,12 +105,6 @@ class AgenticReviewGenerator:
 		if not any(r.success for r in results.values()):
 			return [ReviewComment(title="Agentic Reviewer", body=self._fallback_body(payload, results))]
 		comments: list[ReviewComment] = []
-		
-		# Verdict comment goes FIRST (most important)
-		verdict = self._build_verdict_comment(results)
-		if verdict:
-			comments.append(verdict)
-		
 		summary = self._build_summary_comment(results)
 		if summary:
 			comments.append(summary)
@@ -153,14 +118,6 @@ class AgenticReviewGenerator:
 		if tests:
 			comments.append(tests)
 		return comments or [ReviewComment(title="Agentic Reviewer", body=self._fallback_body(payload, results))]
-	
-	def _build_verdict_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
-		"""Build the verdict comment - the final merge decision."""
-		verdict = results.get("verdict")
-		if not verdict or not verdict.success or not verdict.content:
-			return None
-		return ReviewComment(title="Review Verdict", body=verdict.content)
-
 
 	def _build_summary_comment(self, results: dict[str, AgentResult]) -> ReviewComment | None:
 		task = results.get("task_context")
