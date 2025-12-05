@@ -13,6 +13,7 @@ class TestCoverageAgent(BaseAgent):
 	def build_prompt(self, payload: AgentPayload) -> str:
 		files_blob = payload.files_with_line_numbers(max_files=8, max_lines=200)
 		commits_blob = payload.commits_blob()
+		testing = payload.project_context.testing_standards or payload.project_context.description or ""
 		return (
 			"You evaluate whether the code changes are covered by automated tests.\n"
 			"Follow STRICT rules and output exactly the specified JSON schema.\n"
@@ -30,7 +31,7 @@ class TestCoverageAgent(BaseAgent):
 			"- findings: tie any bug/gap to a specific file+line (1-indexed). Use [] if nothing precise.\n"
 			"- proposed_tests: include up to 2 minimal pytest test cases with fenced code blocks (<=40 lines each).\n"
 			"No prose outside JSON. Keep bullets brutally concise.\n\n"
-			f"Testing Standards: {payload.project_context.testing_standards}\n\n"
+			f"Testing Standards / Project Description: {testing}\n\n"
 			f"Changed Files:\n{files_blob}\n\n"
 			f"Commit Messages:\n{commits_blob}\n"
 		)
