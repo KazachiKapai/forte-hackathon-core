@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config.logging_config import configure_logging
 from .base import KeyValueStore
+from .file_lock import FileLock
 
 _LOGGER = configure_logging()
 
@@ -19,21 +20,25 @@ class FileKeyValueStore(KeyValueStore):
 
     def get_json(self, name: str, default: Any) -> Any:
         path = self._file_path(name)
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return default
+        lock_path = f"{path}.lock"
+        with FileLock(lock_path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return default
 
     def set_json(self, name: str, data: Any) -> None:
         path = self._file_path(name)
-        tmp = f"{path}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        lock_path = f"{path}.lock"
+        with FileLock(lock_path):
+            tmp = f"{path}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
 
     def get_first_token_by_project(self, project_id: int) -> str:
-        return os.environ.get("GITLAB_TOKEN")
+        return os.environ.get("GITLAB_TOKEN") or ""
 
 
 class MongoKeyValueStore(KeyValueStore):
@@ -101,7 +106,7 @@ class MongoKeyValueStore(KeyValueStore):
                             token_project_id = int(token_project_id["$numberInt"])
 
                         if token_project_id == project_id:
-                            return token_obj.get("token")
+                            return token_obj.get("token") or ""
 
             return ""
         except Exception:
