@@ -13,16 +13,22 @@ class DiscussionAgent(BaseAgent):
 
     def build_prompt(self, payload: str) -> str:
         """
-        Build a concise discussion prompt. We expect the payload.description
-        to include both original note and developer reply, preformatted.
+        Build a concise discussion prompt. Payload should include:
+        - original note
+        - developer reply
+        - brief project/doc/tree/diff context (optional)
         """
-        lines: list[str] = ["You are an AI code review assistant collaborating in a GitLab MR thread. ",
-                            "Respond concisely and constructively. If you were wrong, acknowledge and correct. ",
-                            "If a code change is needed, propose the minimal fix with a short snippet. ",
-                            payload or "", "", "Your response (aim for <= 8 lines):"]
+        lines: list[str] = [
+            "You are an AI code review assistant collaborating in a GitLab MR thread.",
+            "Respond concisely and constructively. If you were wrong, acknowledge and correct.",
+            "If a code change is needed, propose the minimal fix with a short snippet.",
+            payload or "",
+            "",
+            "Your response (aim for <= 8 lines):",
+        ]
         return "\n".join(lines)
 
-    def generate_reply(self, original_note: str, developer_reply: str) -> str:
+    def generate_reply(self, original_note: str, developer_reply: str, context: str = "") -> str:
         orig = (original_note or "").strip()
         dev = (developer_reply or "").strip()
         description_parts: list[str] = []
@@ -30,6 +36,8 @@ class DiscussionAgent(BaseAgent):
             description_parts.append("Original review note:\n" + orig[:4000])
         if dev:
             description_parts.append("Developer reply:\n" + dev[:4000])
+        if context:
+            description_parts.append("Context:\n" + context.strip()[:6000])
 
         prompt = self.build_prompt("\n".join(description_parts))
         genai.configure(api_key=self.api_key)
