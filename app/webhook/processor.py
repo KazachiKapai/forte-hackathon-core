@@ -52,25 +52,38 @@ class WebhookProcessor:
         self._handle_review_outcome(project_id, mr_iid, project, service, outcome, commit_sha)
 
     def process_note_comment(self, project_id: int, mr_iid: int, payload: dict[str, Any]) -> None:
-        private_token = storage.get_first_token_by_project(project_id)
-        gl_service = GitLabService("", private_token)
+        service = self._make_gitlab_service(project_id)
 
         user = payload["user"]
-        if gl_service.get_current_user_id() == int(user["id"]):
+        if service.get_current_user_id() == int(user["id"]):
             print("original bot")
             return
 
         obj = payload["object_attributes"]
         discussion_id = obj["discussion_id"]
         note_body = obj["note"]
-        project = gl_service.get_project(project_id)
-        first_body = gl_service.get_discussion_first_note_body(project, mr_iid, discussion_id)
-        reply = self._generate_discussion_reply(first_body or "", note_body or "")
-        gl_service.reply_to_discussion(project, mr_iid, discussion_id, reply)
+        project = service.get_project(project_id)
+        first_body = service.get_discussion_first_note_body(project, mr_iid, discussion_id)
+        context = self._build_discussion_context(service, project, mr_iid)
+        reply = self._generate_discussion_reply(first_body or "", note_body or "", context)
+        service.reply_to_discussion(project, mr_iid, discussion_id, reply)
 
 
-    def _generate_discussion_reply(self, original: str, comment: str) -> str:
-        return self.discussion_agent.generate_reply(original, comment)
+    def _generate_discussion_reply(self, original: str, comment: str, context: str = "") -> str:
+        return self.discussion_agent.generate_reply(original, comment, context)
+
+    def _build_discussion_context(self, service: VCSService, project: Any, mr_iid: int) -> str:
+        repo_ctx = self._augment_with_repo_context(service, project, mr_iid, "")
+        try:
+            diff_text = service.collect_mr_diff_text(project, mr_iid, max_chars=2000)
+        except Exception:
+            diff_text = ""
+        parts: list[str] = []
+        if repo_ctx:
+            parts.append(repo_ctx)
+        if diff_text:
+            parts.append("Diff preview:\n" + diff_text[:2000])
+        return "\n\n".join(p for p in parts if p).strip()
 
     def _gather_mr_data(self, service: VCSService, project: Any, project_id: int, mr_iid: int) -> tuple[str, list[Any], list[str]]:
         """
