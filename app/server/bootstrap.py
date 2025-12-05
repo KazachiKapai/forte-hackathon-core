@@ -3,15 +3,10 @@ from ..integrations.jira_service import JiraService
 from ..review.agentic.generator import AgenticReviewGenerator
 from ..review.agentic.agents.discussion_agent import DiscussionAgent
 from ..tagging.gemini_classifier import GeminiTagClassifier
-from ..vcs.gitlab_service import GitLabService
 from ..webhook.processor import WebhookProcessor
 
 
 def build_services(cfg: AppConfig) -> WebhookProcessor:
-    gl_service = GitLabService(cfg.gitlab_url, cfg.gitlab_token)
-
-    print(f"created gitlab bot with {gl_service.get_current_user_id()} id")
-
     reviewer = AgenticReviewGenerator(
         provider=cfg.agentic_provider,
         model=cfg.agentic_model,
@@ -32,7 +27,6 @@ def build_services(cfg: AppConfig) -> WebhookProcessor:
     )
 
     return WebhookProcessor(
-        service=gl_service,
         reviewer=reviewer,
         webhook_secret=cfg.webhook_secret,
         discussion_agent=discussion_agent,

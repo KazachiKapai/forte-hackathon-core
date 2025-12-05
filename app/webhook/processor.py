@@ -9,8 +9,10 @@ from ..tagging.base import TagClassifier
 from ..vcs.base import VCSService
 from ..storage.json_store import load_json, save_json
 from ..review.agentic.agents.discussion_agent import DiscussionAgent
+from ..vcs.gitlab_service import GitLabService
 
 _ALLOWED_ACTIONS = {"open"}
+storage = get_kv_store()
 
 
 @dataclass(frozen=True)
@@ -19,10 +21,8 @@ class _ReviewOutcome:
     labels: list[str] | None
     inline_findings: list[InlineFinding]
 
-
 class WebhookProcessor:
-    def __init__(self, service: VCSService, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None) -> None:
-        self.service = service
+    def __init__(self, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None) -> None:
         self.reviewer = reviewer
         self.webhook_secret = webhook_secret
         self.discussion_agent = discussion_agent
@@ -42,25 +42,31 @@ class WebhookProcessor:
         return action == "open"
 
     def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, commit_sha: str | None = None) -> None:
-        project = self.service.get_project(project_id)
+        private_token = storage.get_first_token_by_project(project_id)
+        gl_service = GitLabService("", private_token)
+
+        project = gl_service.get_project(project_id)
         diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
         description_aug = self._augment_with_tickets(project, mr_iid, title, description)
         outcome = self._generate_review_outcome(title, description_aug, diff_text, changed_files, commit_messages)
         self._handle_review_outcome(project_id, mr_iid, project, outcome, commit_sha)
 
     def process_note_comment(self, project_id: int, mr_iid: int, payload: dict[str, Any]) -> None:
+        private_token = storage.get_first_token_by_project(project_id)
+        gl_service = GitLabService("", private_token)
+
         user = payload["user"]
-        if self.service.get_current_user_id() == int(user["id"]):
+        if gl_service.get_current_user_id() == int(user["id"]):
             print("original bot")
             return
 
         obj = payload["object_attributes"]
         discussion_id = obj["discussion_id"]
         note_body = obj["note"]
-        project = self.service.get_project(project_id)
-        first_body = self.service.get_discussion_first_note_body(project, mr_iid, discussion_id)
+        project = gl_service.get_project(project_id)
+        first_body = gl_service.get_discussion_first_note_body(project, mr_iid, discussion_id)
         reply = self._generate_discussion_reply(first_body or "", note_body or "")
-        self.service.reply_to_discussion(project, mr_iid, discussion_id, reply)
+        gl_service.reply_to_discussion(project, mr_iid, discussion_id, reply)
 
 
     def _generate_discussion_reply(self, original: str, comment: str) -> str:
@@ -71,10 +77,13 @@ class WebhookProcessor:
         Fetch diff text, changed files, and commit messages concurrently.
         Returns empty values when individual fetches fail.
         """
+        private_token = storage.get_first_token_by_project(project_id)
+        gl_service = GitLabService("", private_token)
+
         with ThreadPoolExecutor(max_workers=3) as pool:
-            diff_f = pool.submit(self.service.collect_mr_diff_text, project, mr_iid)
-            files_f = pool.submit(self.service.get_changed_files_with_content, project, mr_iid)
-            commits_f = pool.submit(self.service.get_mr_commits, project, mr_iid)
+            diff_f = pool.submit(gl_service.collect_mr_diff_text, project, mr_iid)
+            files_f = pool.submit(gl_service.get_changed_files_with_content, project, mr_iid)
+            commits_f = pool.submit(gl_service.get_mr_commits, project, mr_iid)
             diff_text = diff_f.result()
             changed_files = files_f.result()
             commit_objs = commits_f.result()
@@ -175,7 +184,7 @@ class WebhookProcessor:
 
     def _safe_get_latest_version_id(self, project: Any, mr_iid: int) -> str | None:
         try:
-            return self.service.get_latest_mr_version_id(project, mr_iid)  # type: ignore[attr-defined]
+            return gl_service.get_latest_mr_version_id(project, mr_iid)  # type: ignore[attr-defined]
         except Exception:
             return None
 
@@ -189,18 +198,26 @@ class WebhookProcessor:
         comments: list[str],
         marker: str,
     ) -> None:
+        private_token = storage.get_first_token_by_project(project.get_id())
+        gl_service = GitLabService("", private_token)
+
         to_post = comments[:]
         to_post[0] = f"{marker}\n{to_post[0]}" if to_post and to_post[0] else marker
         for body in to_post:
             if body:
-                self.service.post_mr_note(project, mr_iid, body)
+                gl_service.post_mr_note(project, mr_iid, body)
 
     def _post_inline_findings(self, mr_iid: int, project: Any, findings: list[InlineFinding]) -> None:
+        private_token = storage.get_first_token_by_project(project.get_id())
+        gl_service = GitLabService("", private_token)
+
         for finding in findings:
-            self.service.review_line(project, mr_iid, finding.body, finding.path, finding.line)
+            gl_service.review_line(project, mr_iid, finding.body, finding.path, finding.line)
 
     def _apply_labels(self, mr_iid: int, project: Any, labels: list[str]) -> None:
-        self.service.update_mr_labels(project, mr_iid, labels)
+        private_token = storage.get_first_token_by_project(project.get_id())
+        gl_service = GitLabService("", private_token)
+        gl_service.update_mr_labels(project, mr_iid, labels)
 
     def _version_store(self) -> dict[str, list[str]]:
         return load_json("mr_versions.json", {})
