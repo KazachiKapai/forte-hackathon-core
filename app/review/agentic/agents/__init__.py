@@ -4,7 +4,6 @@ from .naming_agent import NamingQualityAgent
 from .task_agent import TaskContextAgent
 from .test_agent import TestCoverageAgent
 from .discussion_agent import DiscussionAgent
-from .verdict_agent import VerdictAgent
 
 __all__ = [
 	"TaskContextAgent",
@@ -13,7 +12,6 @@ __all__ = [
 	"TestCoverageAgent",
 	"DiagramAgent",
 	"DiscussionAgent",
-	"VerdictAgent",
 ]
 
 
