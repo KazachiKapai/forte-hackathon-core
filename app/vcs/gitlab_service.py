@@ -413,4 +413,28 @@ class GitLabService(VCSService):
             mr.title = f"{tag}{title}"
             mr.save()
 
+    def read_file(self, project: Any, path: str, ref: str) -> str | None:
+        try:
+            f = project.files.get(file_path=path, ref=ref)
+            content_b64 = getattr(f, "content", "")
+            if not content_b64:
+                return ""
+            raw = base64.b64decode(content_b64.encode("utf-8"), validate=False)
+            return raw.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+
+    def list_repository_tree(self, project: Any, ref: str, path: str = "", recursive: bool = False) -> list[dict[str, Any]]:
+        try:
+            tree = project.repository_tree(path=path or "", ref=ref, recursive=recursive, get_all=True)
+            return list(tree or [])
+        except TypeError:
+            try:
+                tree = project.repository_tree(path=path or "", ref=ref, recursive=recursive)
+                return list(tree or [])
+            except Exception:
+                return []
+        except Exception:
+            return []
+
 

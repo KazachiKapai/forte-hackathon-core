@@ -22,13 +22,14 @@ class _ReviewOutcome:
     inline_findings: list[InlineFinding]
 
 class WebhookProcessor:
-    def __init__(self, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None) -> None:
+    def __init__(self, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None, service: VCSService | None = None) -> None:
         self.reviewer = reviewer
         self.webhook_secret = webhook_secret
         self.discussion_agent = discussion_agent
         self.tag_classifier = tag_classifier
         self.label_candidates = label_candidates or []
         self.jira_service = jira_service
+        self._service = service
 
     def validate_secret(self, provided: str | None) -> bool:
         return provided and provided == self.webhook_secret
@@ -42,14 +43,13 @@ class WebhookProcessor:
         return action == "open"
 
     def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, commit_sha: str | None = None) -> None:
-        private_token = storage.get_first_token_by_project(project_id)
-        gl_service = GitLabService("", private_token)
-
-        project = gl_service.get_project(project_id)
-        diff_text, changed_files, commit_messages = self._gather_mr_data(project, project_id, mr_iid)
+        service = self._make_gitlab_service(project_id)
+        project = service.get_project(project_id)
+        diff_text, changed_files, commit_messages = self._gather_mr_data(service, project, project_id, mr_iid)
         description_aug = self._augment_with_tickets(project, mr_iid, title, description)
+        description_aug = self._augment_with_repo_context(service, project, mr_iid, description_aug)
         outcome = self._generate_review_outcome(title, description_aug, diff_text, changed_files, commit_messages)
-        self._handle_review_outcome(project_id, mr_iid, project, outcome, commit_sha)
+        self._handle_review_outcome(project_id, mr_iid, project, service, outcome, commit_sha)
 
     def process_note_comment(self, project_id: int, mr_iid: int, payload: dict[str, Any]) -> None:
         private_token = storage.get_first_token_by_project(project_id)
@@ -72,18 +72,15 @@ class WebhookProcessor:
     def _generate_discussion_reply(self, original: str, comment: str) -> str:
         return self.discussion_agent.generate_reply(original, comment)
 
-    def _gather_mr_data(self, project: Any, project_id: int, mr_iid: int) -> tuple[str, list[Any], list[str]]:
+    def _gather_mr_data(self, service: VCSService, project: Any, project_id: int, mr_iid: int) -> tuple[str, list[Any], list[str]]:
         """
         Fetch diff text, changed files, and commit messages concurrently.
         Returns empty values when individual fetches fail.
         """
-        private_token = storage.get_first_token_by_project(project_id)
-        gl_service = GitLabService("", private_token)
-
         with ThreadPoolExecutor(max_workers=3) as pool:
-            diff_f = pool.submit(gl_service.collect_mr_diff_text, project, mr_iid)
-            files_f = pool.submit(gl_service.get_changed_files_with_content, project, mr_iid)
-            commits_f = pool.submit(gl_service.get_mr_commits, project, mr_iid)
+            diff_f = pool.submit(service.collect_mr_diff_text, project, mr_iid)
+            files_f = pool.submit(service.get_changed_files_with_content, project, mr_iid)
+            commits_f = pool.submit(service.get_mr_commits, project, mr_iid)
             diff_text = diff_f.result()
             changed_files = files_f.result()
             commit_objs = commits_f.result()
@@ -159,16 +156,60 @@ class WebhookProcessor:
         )
         return _ReviewOutcome(comments=comments, labels=labels, inline_findings=findings)
 
+    def _augment_with_repo_context(self, service: VCSService, project: Any, mr_iid: int, description: str) -> str:
+        try:
+            _, ref = service.get_mr_branches(project, mr_iid)
+        except Exception:
+            ref = getattr(project, "default_branch", None) or "main"
+        doc_text, doc_name = self._read_project_doc(service, project, ref)
+        tree_listing = self._collect_repo_tree_listing(service, project, ref)
+        parts: list[str] = [description or ""]
+        if doc_text:
+            parts.append(f"{doc_name} contents:\n{doc_text}")
+        if tree_listing:
+            parts.append(f"Repository tree ({ref}):\n{tree_listing}")
+        return "\n\n".join(p for p in parts if p).strip()
+
+    def _read_project_doc(self, service: VCSService, project: Any, ref: str) -> tuple[str, str]:
+        for filename in ("ABOUT.md", "README.md"):
+            content = service.read_file(project, filename, ref)
+            if content is None:
+                continue
+            text = content.strip()
+            if len(text) > 4000:
+                text = text[:4000] + "\n... (truncated)"
+            return text, filename
+        return "", ""
+
+    def _collect_repo_tree_listing(self, service: VCSService, project: Any, ref: str) -> str:
+        nodes = service.list_repository_tree(project, ref, recursive=True)
+        if not nodes:
+            return ""
+        lines: list[str] = []
+        limit = 120
+        for node in nodes[:limit]:
+            path = (node.get("path") or node.get("name") or "").strip()
+            if not path:
+                continue
+            node_type = node.get("type") or node.get("mode")
+            suffix = f" ({node_type})" if node_type else ""
+            lines.append(f"{path}{suffix}")
+        remaining = len(nodes) - limit
+        if remaining > 0:
+            lines.append(f"... (+{remaining} more entries)")
+        return "\n".join(lines)
+
     def _handle_review_outcome(
         self,
         project_id: int,
         mr_iid: int,
         project: Any,
+        service: VCSService,
         outcome: _ReviewOutcome,
         commit_sha: str | None,
     ) -> None:
         if outcome.comments:
-            version_id = self._safe_get_latest_version_id(project, mr_iid)
+            version_id = self._safe_get_latest_version_id(service, project, mr_iid)
             marker = self._build_version_marker(version_id)
             if not (commit_sha and self._has_local_commit_marker(project_id, mr_iid, commit_sha)) and not (version_id and self._has_local_version_marker(project_id, mr_iid, version_id)):
                 if version_id:
@@ -176,15 +217,15 @@ class WebhookProcessor:
                 if commit_sha:
                     self._mark_local_commit_processed(project_id, mr_iid, commit_sha)
 
-                self._post_review_comments(mr_iid, project, outcome.comments, marker)
+                self._post_review_comments(service, mr_iid, project, outcome.comments, marker)
                 if outcome.inline_findings:
-                    self._post_inline_findings(mr_iid, project, outcome.inline_findings)
+                    self._post_inline_findings(service, mr_iid, project, outcome.inline_findings)
                 if outcome.labels:
-                    self._apply_labels(mr_iid, project, outcome.labels)
+                    self._apply_labels(service, mr_iid, project, outcome.labels)
 
-    def _safe_get_latest_version_id(self, project: Any, mr_iid: int) -> str | None:
+    def _safe_get_latest_version_id(self, service: VCSService, project: Any, mr_iid: int) -> str | None:
         try:
-            return gl_service.get_latest_mr_version_id(project, mr_iid)  # type: ignore[attr-defined]
+            return service.get_latest_mr_version_id(project, mr_iid)  # type: ignore[attr-defined]
         except Exception:
             return None
 
@@ -193,31 +234,24 @@ class WebhookProcessor:
 
     def _post_review_comments(
         self,
+        service: VCSService,
         mr_iid: int,
         project: Any,
         comments: list[str],
         marker: str,
     ) -> None:
-        private_token = storage.get_first_token_by_project(project.get_id())
-        gl_service = GitLabService("", private_token)
-
         to_post = comments[:]
         to_post[0] = f"{marker}\n{to_post[0]}" if to_post and to_post[0] else marker
         for body in to_post:
             if body:
-                gl_service.post_mr_note(project, mr_iid, body)
+                service.post_mr_note(project, mr_iid, body)
 
-    def _post_inline_findings(self, mr_iid: int, project: Any, findings: list[InlineFinding]) -> None:
-        private_token = storage.get_first_token_by_project(project.get_id())
-        gl_service = GitLabService("", private_token)
-
+    def _post_inline_findings(self, service: VCSService, mr_iid: int, project: Any, findings: list[InlineFinding]) -> None:
         for finding in findings:
-            gl_service.review_line(project, mr_iid, finding.body, finding.path, finding.line)
+            service.review_line(project, mr_iid, finding.body, finding.path, finding.line)
 
-    def _apply_labels(self, mr_iid: int, project: Any, labels: list[str]) -> None:
-        private_token = storage.get_first_token_by_project(project.get_id())
-        gl_service = GitLabService("", private_token)
-        gl_service.update_mr_labels(project, mr_iid, labels)
+    def _apply_labels(self, service: VCSService, mr_iid: int, project: Any, labels: list[str]) -> None:
+        service.update_mr_labels(project, mr_iid, labels)
 
     def _version_store(self) -> dict[str, list[str]]:
         return load_json("mr_versions.json", {})
@@ -260,5 +294,11 @@ class WebhookProcessor:
             seen.append(commit_sha)
             store[key] = seen
             save_json("mr_commits.json", store)
+
+    def _make_gitlab_service(self, project_id: int) -> VCSService:
+        if self._service is not None:
+            return self._service
+        private_token = storage.get_first_token_by_project(project_id)
+        return GitLabService("", private_token)
 
 
