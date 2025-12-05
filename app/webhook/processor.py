@@ -49,6 +49,11 @@ class WebhookProcessor:
         self._handle_review_outcome(project_id, mr_iid, project, outcome, commit_sha)
 
     def process_note_comment(self, project_id: int, mr_iid: int, payload: dict[str, Any]) -> None:
+        user = payload["user"]
+        if self.service.get_current_user_id() == int(user["id"]):
+            print("original bot")
+            return
+
         obj = payload["object_attributes"]
         discussion_id = obj["discussion_id"]
         note_body = obj["note"]
