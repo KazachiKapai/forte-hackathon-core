@@ -11,6 +11,7 @@ class NamingQualityAgent(BaseAgent):
 
 	def build_prompt(self, payload: AgentPayload) -> str:
 		files_blob = payload.files_with_line_numbers(max_files=8, max_lines=300)
+		guidelines = payload.project_context.coding_guidelines or payload.project_context.description or ""
 		return (
 			"You review naming, function signatures, and inline documentation.\n"
 			"Follow STRICT rules and output exactly the specified JSON schema.\n"
@@ -21,7 +22,7 @@ class NamingQualityAgent(BaseAgent):
 			"- 'findings' pinpoints actionable issues; omit if nothing precise. Lines are 1-indexed.\n"
 			"- If everything is fine, use summary [\"Naming and docs look fine\"] and findings [].\n"
 			"- No prose outside JSON.\n\n"
-			f"Coding Guidelines:\n{payload.project_context.coding_guidelines}\n\n"
+			f"Coding Guidelines / Project Description:\n{guidelines}\n\n"
 			f"Changed Files:\n{files_blob}\n"
 		)
 
