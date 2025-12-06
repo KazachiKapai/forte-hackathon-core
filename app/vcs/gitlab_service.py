@@ -9,7 +9,8 @@ from .base import VCSService
 
 class GitLabService(VCSService):
     def __init__(self, base_url: str, private_token: str) -> None:
-        self.client = gitlab.Gitlab("https://gitlab.com", private_token=private_token)
+        url = base_url if base_url else "https://gitlab.com"
+        self.client = gitlab.Gitlab(url, private_token=private_token)
 
     def get_current_user_id(self) -> int | None:
         self.client.auth()

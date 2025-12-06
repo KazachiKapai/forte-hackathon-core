@@ -1,4 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,7 +24,7 @@ class _ReviewOutcome:
     inline_findings: list[InlineFinding]
 
 class WebhookProcessor:
-    def __init__(self, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None, service: VCSService | None = None) -> None:
+    def __init__(self, reviewer: ReviewGenerator, webhook_secret: str, discussion_agent: DiscussionAgent | None = None, tag_classifier: TagClassifier | None = None, label_candidates: list[str] | None = None, jira_service: JiraService | None = None, service: VCSService | None = None, gitlab_url: str = "") -> None:
         self.reviewer = reviewer
         self.webhook_secret = webhook_secret
         self.discussion_agent = discussion_agent
@@ -30,6 +32,10 @@ class WebhookProcessor:
         self.label_candidates = label_candidates or []
         self.jira_service = jira_service
         self._service = service
+        self.gitlab_url = gitlab_url
+        self._ver_lock = Lock()
+        self._commit_lock = Lock()
+        self._logger = logging.getLogger(__name__)
 
     def validate_secret(self, provided: str | None) -> bool:
         return provided and provided == self.webhook_secret
@@ -43,13 +49,16 @@ class WebhookProcessor:
         return action == "open"
 
     def process_merge_request(self, project_id: int, mr_iid: int, title: str, description: str, commit_sha: str | None = None) -> None:
-        service = self._make_gitlab_service(project_id)
-        project = service.get_project(project_id)
-        diff_text, changed_files, commit_messages = self._gather_mr_data(service, project, project_id, mr_iid)
-        description_aug = self._augment_with_tickets(project, mr_iid, title, description)
-        description_aug = self._augment_with_repo_context(service, project, mr_iid, description_aug)
-        outcome = self._generate_review_outcome(title, description_aug, diff_text, changed_files, commit_messages)
-        self._handle_review_outcome(project_id, mr_iid, project, service, outcome, commit_sha)
+        try:
+            service = self._make_gitlab_service(project_id)
+            project = service.get_project(project_id)
+            diff_text, changed_files, commit_messages = self._gather_mr_data(service, project, project_id, mr_iid)
+            description_aug = self._augment_with_tickets(project, mr_iid, title, description)
+            description_aug = self._augment_with_repo_context(service, project, mr_iid, description_aug)
+            outcome = self._generate_review_outcome(title, description_aug, diff_text, changed_files, commit_messages)
+            self._handle_review_outcome(project_id, mr_iid, project, service, outcome, commit_sha)
+        except Exception as e:
+            self._logger.exception(f"Failed to process MR {project_id}!{mr_iid}: {e}")
 
     def process_note_comment(self, project_id: int, mr_iid: int, payload: dict[str, Any]) -> None:
         service = self._make_gitlab_service(project_id)
@@ -278,13 +287,14 @@ class WebhookProcessor:
     def _mark_local_version_processed(self, project_id: int, mr_iid: int, version_id: str) -> None:
         if not version_id:
             return
-        store = self._version_store()
-        key = f"{project_id}:{mr_iid}"
-        seen: list[str] = store.get(key, [])
-        if version_id not in seen:
-            seen.append(version_id)
-            store[key] = seen
-            save_json("mr_versions.json", store)
+        with self._ver_lock:
+            store = self._version_store()
+            key = f"{project_id}:{mr_iid}"
+            seen: list[str] = store.get(key, [])
+            if version_id not in seen:
+                seen.append(version_id)
+                store[key] = seen
+                save_json("mr_versions.json", store)
 
     def _commit_store(self) -> dict[str, list[str]]:
         return load_json("mr_commits.json", {})
@@ -300,18 +310,19 @@ class WebhookProcessor:
     def _mark_local_commit_processed(self, project_id: int, mr_iid: int, commit_sha: str) -> None:
         if not commit_sha:
             return
-        store = self._commit_store()
-        key = f"{project_id}:{mr_iid}"
-        seen: list[str] = store.get(key, [])
-        if commit_sha not in seen:
-            seen.append(commit_sha)
-            store[key] = seen
-            save_json("mr_commits.json", store)
+        with self._commit_lock:
+            store = self._commit_store()
+            key = f"{project_id}:{mr_iid}"
+            seen: list[str] = store.get(key, [])
+            if commit_sha not in seen:
+                seen.append(commit_sha)
+                store[key] = seen
+                save_json("mr_commits.json", store)
 
     def _make_gitlab_service(self, project_id: int) -> VCSService:
         if self._service is not None:
             return self._service
         private_token = storage.get_first_token_by_project(project_id)
-        return GitLabService("", private_token)
+        return GitLabService(self.gitlab_url, private_token)
 
 

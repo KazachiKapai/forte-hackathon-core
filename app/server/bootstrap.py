@@ -33,6 +33,7 @@ def build_services(cfg: AppConfig) -> WebhookProcessor:
         tag_classifier=classifier,
         label_candidates=cfg.label_candidates,
         jira_service=jira,
+        gitlab_url=cfg.gitlab_url,
     )
 
 
